@@ -25,5 +25,5 @@ python setup.py install --cuda_ext --cpp_ext
 cd ..
 
 # install VC
-cd VC-R-CNN
+cd multimodal_research
 python setup.py build develop
