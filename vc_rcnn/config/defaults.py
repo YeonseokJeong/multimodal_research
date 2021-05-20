@@ -412,7 +412,7 @@ _C.SOLVER.CHECKPOINT_PERIOD = 5000
 # Number of images per batch
 # This is global, so if we have 8 GPUs and IMS_PER_BATCH = 16, each GPU will
 # see 2 images per batch
-_C.SOLVER.IMS_PER_BATCH = 8  # In our VC, we use 4 GPUs.
+_C.SOLVER.IMS_PER_BATCH = 2  # In our VC, we use 4 GPUs.
 
 # ---------------------------------------------------------------------------- #
 # Specific test options
@@ -423,7 +423,7 @@ _C.TEST.EXPECTED_RESULTS_SIGMA_TOL = 4
 # Number of images per batch
 # This is global, so if we have 8 GPUs and IMS_PER_BATCH = 16, each GPU will
 # see 2 images per batch
-_C.TEST.IMS_PER_BATCH = 8
+_C.TEST.IMS_PER_BATCH = 2
 # Number of detections per image
 _C.TEST.DETECTIONS_PER_IMG = 100
 
@@ -452,10 +452,10 @@ _C.TEST.BBOX_AUG.SCALE_H_FLIP = False
 # ---------------------------------------------------------------------------- #
 # Misc options
 # ---------------------------------------------------------------------------- #
-_C.OUTPUT_DIR = "/the/path/you/want/to/save/model"
+_C.OUTPUT_DIR = "./output/output_dir"
 
 _C.PATHS_CATALOG = os.path.join(os.path.dirname(__file__), "paths_catalog.py")
-_C.TENSORBOARD_EXPERIMENT = "/the/path/you/want/to/save/log"
+_C.TENSORBOARD_EXPERIMENT = "./output/tensorboard_log"
 
 # ---------------------------------------------------------------------------- #
 # Precision options

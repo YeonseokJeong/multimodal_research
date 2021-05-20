@@ -5,7 +5,7 @@ import os
 
 
 class DatasetCatalog(object):
-    DATA_DIR = "/path_to_COCO_dataset"
+    DATA_DIR = "/downstream/UNITER/vcr_data/"
     DATASETS = {
         "vcr": {
             "img_dir": "vcr_image/vcr1images",

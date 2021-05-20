@@ -1,2 +1,6 @@
 # data
 downstream/UNITER/vcr_data
+
+# output
+output/
+output_test/
