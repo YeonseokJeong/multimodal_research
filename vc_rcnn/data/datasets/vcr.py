@@ -52,10 +52,10 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
         # self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
         self._transforms = transforms
 
-        features_path = '/data3/wangtan/vc/vilbert_beta/data/VCR/VCR_gt_resnet101_faster_rcnn_genome.lmdb'
+        features_path = './data3/wangtan/vc/vilbert_beta/data/VCR/VCR_gt_resnet101_faster_rcnn_genome.lmdb'
         self.env = lmdb.open(features_path, max_readers=1, readonly=True,
                             lock=False, readahead=False, meminit=False)
-
+        id2img_name = {}
         with self.env.begin(write=False) as txn:
             self._image_ids = pickle.loads(txn.get('keys'.encode()))
             self.img_info = []
@@ -65,8 +65,10 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
                 w = pickle.loads(txn.get(i))['image_w']
                 path = pickle.loads(txn.get(i))['image_id']
                 self.img_info.append({"width":w, "height":h, "path":path})
+                id2img_name[int(i)] = path.split('/')[-1]# make id2img_name
 
-
+        with open('./output/id2img_name.json', 'w', encoding="utf-8") as fp: # make id2img_name
+            json.dump(id2img_name, fp)
 
     def __getitem__(self, idx):
 
@@ -104,7 +106,7 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
         numm = [num_boxes for i in range(boxes.size(0))]
         numm = torch.tensor(numm)
         target.add_field("num_box", numm)
-
+ 
         target = target.clip_to_image(remove_empty=False)
 
         if self.transforms is not None:

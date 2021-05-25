@@ -34,8 +34,9 @@ def build_dataset(dataset_list, transforms, dataset_catalog, cfg, is_train=True)
         data = dataset_catalog.get(dataset_name)
         factory = getattr(D, data["factory"])
         args = data["args"]
-        args['bbox_file_path'] = cfg.BOUNDINGBOX_FILE
-        args['num_threshold_object'] = cfg.NUM_THRESHOLD_OBJECT
+        if data["factory"] != "vcrDataset":
+            args['bbox_file_path'] = cfg.BOUNDINGBOX_FILE
+            args['num_threshold_object'] = cfg.NUM_THRESHOLD_OBJECT
 
         # for COCODataset, we want to remove images without annotations
         # during training

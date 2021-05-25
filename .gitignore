@@ -1,5 +1,11 @@
 # data
-downstream/UNITER/vcr_data
+### VCR Dataset (MOVIE CLIP)
+downstream/UNITER/vcr_data/
+### additional feature 
+data3/
+
+# pretrained model
+pretrained/
 
 # output
 output/

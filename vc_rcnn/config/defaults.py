@@ -476,13 +476,13 @@ _C.AMP_VERBOSE = False
 _C.BOUNDINGBOX_FILE = '/.../cocobu_box'
 
 # The pre-prepared dictionary file path for intervention (numpy format)
-_C.DIC_FILE = '/.../dic_coco.npy'
+_C.DIC_FILE = './tools/dic_coco.npy'
 
 # The pre-prepared dictionary file path for intervention (numpy format)
-_C.FEATURE_SAVE_PATH = '/.../vc_feature'
+_C.FEATURE_SAVE_PATH = './output/vc_feature'
 
 # The prior probability P(z)
-_C.PRIOR_PROB = '/.../stat_prob.npy'
+_C.PRIOR_PROB = './tools/stat_prob.npy'
 
 # Num threshold of object in one image
 _C.NUM_THRESHOLD_OBJECT = 2

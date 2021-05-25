@@ -10,6 +10,7 @@ from .loss import make_roi_box_loss_evaluator
 from .roi_box_predictors import make_causal_predictor
 import torch.nn.functional as F
 import os
+import json
 class ROIBoxHead(torch.nn.Module):
     """
     Generic Box Head class.
@@ -24,6 +25,7 @@ class ROIBoxHead(torch.nn.Module):
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
         self.causal_predictor = make_causal_predictor(cfg, self.feature_extractor.out_channels)
         self.feature_save_path = cfg.FEATURE_SAVE_PATH
+        self.id2img_name_flag = 0
 
     def forward(self, features, proposals, targets=None):
         """
@@ -56,9 +58,12 @@ class ROIBoxHead(torch.nn.Module):
         if not self.training:
 
             result = self.post_processor_gt(x, class_logits, proposals)
-
+            if self.id2img_name_flag == 0:
+                with open('./output/id2img_name.json', 'r', encoding = "utf-8") as fp: # add img_name to vc feature
+                    self.id2img_name_flag = 1
+                    id2img_name = json.load(fp)
             # save object feature
-            self.save_object_feature_gt_bu(x, result, targets)
+            self.save_object_feature_gt_bu(x, result, targets, id2img_name)
 
             return x, result, {}
 
@@ -86,13 +91,14 @@ class ROIBoxHead(torch.nn.Module):
         return boxes
 
 
-    def save_object_feature_gt_bu(self, x, result, targets):
+    def save_object_feature_gt_bu(self, x, result, targets, id2img_name):
 
         for i, image in enumerate(result):
             feature_pre_image = image.get_field("features").cpu().numpy()
             try:
                 assert image.get_field("num_box")[0] == feature_pre_image.shape[0]
                 image_id = str(image.get_field("image_id")[0].cpu().numpy())
+                image_id = image_id + "_" + str(id2img_name[image_id])# add img_name to vc feature
                 path = os.path.join(self.feature_save_path, image_id) +'.npy'
                 np.save(path, feature_pre_image)
             except:
