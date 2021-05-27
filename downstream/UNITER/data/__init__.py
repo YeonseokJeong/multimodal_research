@@ -26,3 +26,5 @@ from .vcr import (VcrTxtTokLmdb, VcrDataset, VcrEvalDataset,
                   vcr_collate, vcr_eval_collate)
 from .re import (ReTxtTokLmdb, ReDataset, ReEvalDataset,
                  re_collate, re_eval_collate)
+# Fix import error in pretrain_vcr.py
+from .pretrain_vcr import (MlmDatasetForVCR, MrfrDatasetForVCR, MrcDatasetForVCR)
