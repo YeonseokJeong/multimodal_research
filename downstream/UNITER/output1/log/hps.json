@@ -1,7 +1,8 @@
 {
+    "compressed_db": false,
     "model_config": "/src/config/uniter-base.json",
-    "checkpoint": "/src/vcr_data/pretrained/uniter-base-init.pt",
-    "output_dir": "/src/storage/pretrain/vcr_2nd_stage_base_VCfeature",
+    "checkpoint": "/src/vcr_data/pretrain/uniter-base.pt",
+    "output_dir": "output1",
     "mrm_prob": 0.15,
     "max_txt_len": 220,
     "conf_th": 0.2,
@@ -31,10 +32,10 @@
         {
             "name": "vcr",
             "db": [
-                "vcr_data/txt_db/vcr_train.db/"
+                "/txt/vcr_train.db/"
             ],
             "img": [
-                "vcr_data/img_db/vcr_gt_train/;vcr_data/img_db/vcr_train/"
+                "/img/vcr_gt_train/;/img/vcr_train/"
             ],
             "tasks": [
                 "mlm",
@@ -52,10 +53,10 @@
         {
             "name": "vcr",
             "db": [
-                "vcr_data/txt_db/vcr_val.db/"
+                "/txt/vcr_val.db/"
             ],
             "img": [
-                "vcr_data/img_db/vcr_gt_val/;vcr_data/img_db/vcr_val/"
+                "/img/vcr_gt_val/;/img/vcr_val/"
             ],
             "tasks": [
                 "mlm",

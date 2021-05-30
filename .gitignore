@@ -8,5 +8,13 @@ data3/
 pretrained/
 
 # output
+### VC R-CNN
 output/
 output_test/
+### UNITER 
+downstream/UNITER/storage
+downstream/UNITER/output
+downstream/UNITER/ouput1
+
+# etc
+*__pycache__*
