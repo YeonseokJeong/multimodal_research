@@ -13,7 +13,7 @@ from cytoolz import concat
 from .data import (DetectFeatTxtTokDataset, TxtTokLmdb, DetectFeatLmdb,
                    TxtLmdb, get_ids_and_lens, pad_tensors,
                    get_gather_index)
-
+import numpy as np
 
 class VcrTxtTokLmdb(TxtTokLmdb):
     def __init__(self, db_dir, max_txt_len=120, task="qa,qar"):
@@ -78,7 +78,10 @@ class VcrDetectFeatTxtTokDataset(DetectFeatTxtTokDataset):
 
             img_feat, bb = self.img_db[fname]
             img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
-
+            ### extract uniter bbox
+            ### real_name = '_'.join(fname.split('_')[2:])
+            ### np.save("./bbox_test/"+real_name+".npy", bb.numpy()[:,:4])
+            ###
             img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
             img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
             num_bb = img_feat.size(0)

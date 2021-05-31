@@ -3,6 +3,8 @@
 downstream/UNITER/vcr_data/
 ### additional feature 
 data3/
+### VC Feature in UNITER
+downstream/UNITER/vc_feature
 
 # pretrained model
 pretrained/
@@ -15,6 +17,19 @@ output_test/
 downstream/UNITER/storage
 downstream/UNITER/output
 downstream/UNITER/ouput1
+downstream/UNITER/output2
+downstream/UNITER/output_train
+downstream/UNITER/output_val
+downstream/UNITER/output_test
+### UNITER bouding box
+downstream/UNITER/bbox
+downstream/UNITER/bbox_train
+downstream/UNITER/bbox_val
+downstream/UNITER/bbox_test
+downstream/UNITER/bbox_ver1
 
 # etc
-*__pycache__*
+__pycache__
+*.pyc
+downstream/UNITER/find.py
+

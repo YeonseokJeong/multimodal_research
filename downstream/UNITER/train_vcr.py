@@ -234,7 +234,9 @@ def main(opts):
     while True:
         for step, batch in enumerate(train_dataloader):
             n_examples += batch['input_ids'].size(0)
-
+            ### extract uniter bbox
+            ### continue
+            ###
             loss = model(batch, compute_loss=True)
             loss = loss.mean()
             delay_unscale = (step+1) % opts.gradient_accumulation_steps != 0
@@ -300,7 +302,7 @@ def main(opts):
         if global_step >= opts.num_train_steps:
             break
         n_epoch += 1
-        LOGGER.info(f"finished {n_epoch} epochs")
+        LOGGER.info(f"finished {n_epoch} epochs")### ;return ### extract vc feature
     if global_step % opts.valid_steps != 0:
         val_log, results = validate(
             model, val_dataloader)

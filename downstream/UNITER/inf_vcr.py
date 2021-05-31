@@ -175,7 +175,7 @@ def evaluate(model, eval_loader):
     st = time()
     results = {}
     for i, batch in enumerate(eval_loader):
-        qids = batch['qids']
+        qids = batch['qids']### ;continue ###
         qa_targets, qar_targets = batch['qa_targets'], batch['qar_targets']
         scores = model(batch, compute_loss=False)
         scores = scores.view(len(qids), -1)
@@ -206,7 +206,7 @@ def evaluate(model, eval_loader):
             results[qid] = score.cpu().tolist()
         n_ex += len(qids)
         val_pbar.update(1)
-    val_qa_loss = sum(all_gather_list(val_qa_loss))
+    val_qa_loss = sum(all_gather_list(val_qa_loss))### ;return ### 
     val_qar_loss = sum(all_gather_list(val_qar_loss))
     tot_qa_score = sum(all_gather_list(tot_qa_score))
     tot_qar_score = sum(all_gather_list(tot_qar_score))
