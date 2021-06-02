@@ -96,9 +96,10 @@ class ROIBoxHead(torch.nn.Module):
         for i, image in enumerate(result):
             feature_pre_image = image.get_field("features").cpu().numpy()
             try:
-                assert image.get_field("num_box")[0] == feature_pre_image.shape[0]
+                assert image.get_field("num_box")[0] == feature_pre_image.shape[0] ### extract vc feature by uniter bbox
                 image_id = str(image.get_field("image_id")[0].cpu().numpy())
-                image_id = image_id + "_" + str(id2img[image_id])# add img_name to vc feature
+                #image_id = image_id + "_" + str(id2img[image_id])# add img_name to vc feature
+                image_id = str(id2img[image_id]) ### extract vc feaure by uniter bbox
                 path = os.path.join(self.feature_save_path, image_id) +'.npy'
                 np.save(path, feature_pre_image)
             except:

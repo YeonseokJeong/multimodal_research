@@ -18,8 +18,11 @@ from .bbox_aug import im_detect_bbox_aug
 def compute_on_dataset(model, data_loader, device, timer=None):
     model.eval()
     results_dict = {}
-    cpu_device = torch.device("cpu")
+    cpu_device = torch.device("cpu");i=0
     for _, batch in enumerate(tqdm(data_loader)):
+        i+=1
+        if i < 87351:
+            continue
         images, targets, image_ids = batch
         with torch.no_grad():
             if timer:

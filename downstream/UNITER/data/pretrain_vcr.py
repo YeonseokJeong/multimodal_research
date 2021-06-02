@@ -122,7 +122,7 @@ class MlmDatasetForVCR(VcrPretrainDataset):
         example = super().__getitem__(i)
         img_feat, img_pos_feat, num_bb = self._get_img_feat(
             example['img_fname'][0], example['img_fname'][1])
-
+        import ipdb;ipdb.set_trace(context=10)
         # txt inputs, create mlm io
         input_ids, txt_type_ids, txt_labels = self.create_mlm_io(example)
 

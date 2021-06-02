@@ -85,7 +85,26 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
             num_boxes = int(item['num_boxes'])
             boxes = np.frombuffer(base64.b64decode(item['boxes']), dtype=np.float32).reshape(num_boxes, 4)
 
-
+        #import ipdb;ipdb.set_trace(context=10)
+        ### extract vc feature by uniter bounding box
+        
+        try:
+            root = "/home/jys3136/multimodal_research/downstream/UNITER/bbox/"
+            boxes = np.load(root + img_name.split('/')[1].replace('.jpg', '')+".npz.npy")
+            boxx = np.ones((boxes.shape[0], 1))*image_w
+            boxy = np.ones((boxes.shape[0], 1))*image_h
+            boxes = np.concatenate((boxx, boxy, boxx, boxy), axis=1)*boxes
+            num_boxes = boxes.shape[0]
+            ### print(img_name)
+        except:
+            print("error")
+        '''
+        root = "/home/jys3136/multimodal_research/downstream/UNITER/bbox/";print(root+img_name.split('/')[1].replace('.jpg',''))
+        boxes = np.load(root + img_name.split('/')[1].replace('.jpg', '')+".npz.npy");print(boxes.shape)
+        boxx = np.ones((boxes.shape[0], 1))*image_w;print(boxx)
+        boxy = np.ones((boxes.shape[0], 1))*image_h
+        boxes = np.concatenate((boxx, boxy, boxx, boxy), axis=1)*boxes'''
+        ### 
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
         target = BoxList(boxes, img.size, mode="xyxy")
 
