@@ -7,7 +7,7 @@ from .data import pad_tensors, get_gather_index
 from .mrm import (
     _get_img_tgt_mask, _get_img_mask, _mask_img_feat,
     _get_feat_target, _get_targets)
-
+import numpy as np
 
 class VcrPretrainDataset(VcrDetectFeatTxtTokDataset):
     def __init__(self, *args, **kwargs):
@@ -122,7 +122,7 @@ class MlmDatasetForVCR(VcrPretrainDataset):
         example = super().__getitem__(i)
         img_feat, img_pos_feat, num_bb = self._get_img_feat(
             example['img_fname'][0], example['img_fname'][1])
-        import ipdb;ipdb.set_trace(context=10)
+
         # txt inputs, create mlm io
         input_ids, txt_type_ids, txt_labels = self.create_mlm_io(example)
 
@@ -167,17 +167,32 @@ class MrfrDatasetForVCR(VcrPretrainDataset):
 
         attn_masks = torch.ones(len(input_ids) + num_bb, dtype=torch.long)
 
+        # load vc feature to UNITER pretrain (mrfr)
+        try:
+            vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
+            vc_feat = np.load('vc_feature_final/' + vc_name)
+        except:
+            #vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
+            #vc_feat = np.load('vc_feature_final/' + vc_name)
+            vc_feat = img_feat
+            vc_name = "Nan"
+
+
+        print(num_bb)
+        print(vc_feat.shape)
+        print(vc_name)
         return (input_ids, txt_type_ids, img_feat, img_pos_feat,
-                attn_masks, img_mask, img_mask_tgt)
+                attn_masks, img_mask, img_mask_tgt, vc_feat)
 
 
 def mrfr_collate_for_vcr(inputs):
+    import ipdb;ipdb.set_trace(context=10)
     (input_ids, txt_type_ids, img_feats, img_pos_feats,
-     attn_masks, img_masks, img_mask_tgts) = map(list, unzip(inputs))
+     attn_masks, img_masks, img_mask_tgts, vc_feats) = map(list, unzip(inputs))
 
-    batch = vcr_pretrain_collate(
+    batch = vcr_mrfr_pretrain_collate(
         input_ids, txt_type_ids, img_feats,
-        img_pos_feats, attn_masks)
+        img_pos_feats, attn_masks, vc_feats)
 
     # mask features
     img_masks = pad_sequence(img_masks, batch_first=True, padding_value=0)
@@ -188,7 +203,7 @@ def mrfr_collate_for_vcr(inputs):
     batch['img_masks'] = img_masks
     batch['feat_targets'] = feat_targets
     batch['img_mask_tgt'] = img_mask_tgt
-
+    
     return batch
 
 
@@ -270,4 +285,38 @@ def mrc_collate_for_vcr(inputs):
     batch['label_targets'] = label_targets
     batch['img_mask_tgt'] = img_mask_tgt
 
+    return batch
+
+def vcr_mrfr_pretrain_collate(
+        input_ids, txt_type_ids, img_feats,
+        img_pos_feats, attn_masks, vc_feats):
+
+    # text batches
+    txt_lens = [i.size(0) for i in input_ids]
+    input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
+    txt_type_ids = pad_sequence(txt_type_ids, batch_first=True,
+                                padding_value=0)
+    position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long
+                                ).unsqueeze(0)
+
+    # image batches
+    num_bbs = [f.size(0) for f in img_feats]
+    img_feat = pad_tensors(img_feats, num_bbs)
+    img_pos_feat = pad_tensors(img_pos_feats, num_bbs)
+    vc_feat = pad_tensors(vc_feats, num_bbs)
+
+    attn_masks = pad_sequence(attn_masks, batch_first=True, padding_value=0)
+
+    bs, max_tl = input_ids.size()
+    out_size = attn_masks.size(1)
+    gather_index = get_gather_index(txt_lens, num_bbs, bs, max_tl, out_size)
+
+    batch = {'input_ids': input_ids,
+             'txt_type_ids': txt_type_ids,
+             'position_ids': position_ids,
+             'img_feat': img_feat,
+             'img_pos_feat': img_pos_feat,
+             'attn_masks': attn_masks,
+             'gather_index': gather_index,
+             'vc_feat': vc_feat}
     return batch

@@ -54,6 +54,9 @@ class UniterForPretraining(UniterPreTrainedModel):
         self.uniter = UniterModel(config, img_dim)
         self.cls = BertOnlyMLMHead(
             config, self.uniter.embeddings.word_embeddings.weight)
+        self.feat_regress_vc = RegionFeatureRegression(
+                config.hidden_size, 1024, 
+                self.uniter.img_embeddings.img_linear.weight)
         self.feat_regress = RegionFeatureRegression(
             config.hidden_size, img_dim,
             self.uniter.img_embeddings.img_linear.weight)

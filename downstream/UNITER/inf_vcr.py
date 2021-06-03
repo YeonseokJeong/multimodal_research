@@ -175,7 +175,7 @@ def evaluate(model, eval_loader):
     st = time()
     results = {}
     for i, batch in enumerate(eval_loader):
-        qids = batch['qids']### ;continue ###
+        qids = batch['qids'];continue ###
         qa_targets, qar_targets = batch['qa_targets'], batch['qar_targets']
         scores = model(batch, compute_loss=False)
         scores = scores.view(len(qids), -1)

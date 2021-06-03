@@ -1,6 +1,6 @@
 {
-    "train_txt_dbs": ["./vcr_data/txt_db/vcr_test.db/"],
-    "train_img_dbs": ["./vcr_data/img_db/vcr_gt_test/;./vcr_data/img_db/vcr_test/"],
+    "train_txt_dbs": ["./vcr_data/txt_db/vcr_val.db/"],
+    "train_img_dbs": ["./vcr_data/img_db/vcr_gt_val/;./vcr_data/img_db/vcr_val/"],
     "val_txt_db": "./vcr_data/txt_db/vcr_val.db/",
     "val_img_db": "./vcr_data/img_db/vcr_gt_val/;/img/vcr_val/",
     "checkpoint": "./vcr_data/pretrained/uniter-base-vcr_2nd_stage.pt",

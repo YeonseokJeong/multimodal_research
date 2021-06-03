@@ -50,11 +50,14 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrfr_feat_target = batch['feat_targets']
+            
+            vc_feat = batch['vc_feat']
+
             return self.forward_mrfr(input_ids, position_ids,
                                      txt_type_ids, img_feat, img_pos_feat,
                                      attention_mask, gather_index,
                                      img_masks, img_mask_tgt,
-                                     mrfr_feat_target, compute_loss)
+                                     mrfr_feat_target, vc_feat, compute_loss)
         elif task.startswith('mrc'):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
@@ -106,7 +109,11 @@ class UniterForPretrainingForVCR(UniterForPretraining):
         # only compute masked tokens for better efficiency
         masked_output = self._compute_masked_hidden(sequence_output,
                                                     img_mask_tgt)
-        prediction_feat = self.feat_regress(masked_output)
+        if vc_feat.shape[1]==1024:
+            prediction_feat = self.feat_regress_vc(masked_output)
+            feat_targets = vc_feat
+        else:
+            prediction_feat = self.feat_regress(masked_output)
 
         if compute_loss:
             mrfr_loss = F.mse_loss(prediction_feat, feat_targets,

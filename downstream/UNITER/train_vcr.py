@@ -235,7 +235,7 @@ def main(opts):
         for step, batch in enumerate(train_dataloader):
             n_examples += batch['input_ids'].size(0)
             ### extract uniter bbox
-            ### continue
+            continue
             ###
             loss = model(batch, compute_loss=True)
             loss = loss.mean()
@@ -301,7 +301,7 @@ def main(opts):
                 break
         if global_step >= opts.num_train_steps:
             break
-        n_epoch += 1
+        n_epoch += 1;break
         LOGGER.info(f"finished {n_epoch} epochs")### ;return ### extract vc feature
     if global_step % opts.valid_steps != 0:
         val_log, results = validate(
