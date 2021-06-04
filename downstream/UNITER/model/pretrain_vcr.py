@@ -106,7 +106,6 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                       output_all_encoded_layers=False,
                                       img_masks=img_masks,
                                       txt_type_ids=txt_type_ids)
-        import ipdb;ipdb.set_trace(context=10)
         # only compute masked tokens for better efficiency
         masked_output = self._compute_masked_hidden(sequence_output,
                                                     img_mask_tgt)
