@@ -87,16 +87,14 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
 
         #import ipdb;ipdb.set_trace(context=10)
         ### extract vc feature by uniter bounding box
-        print(num_boxes)
+
         try:
-            root = "/home/jys3136/multimodal_research/downstream/UNITER/bbox/"
-            boxes = np.load(root + img_name.split('/')[1].replace('.jpg', '')+".npz.npy")
+            root = "/home/jys3136/multimodal_research/downstream/UNITER/bbox_gt/"
+            boxes = np.load(root + img_name.split('/')[1].replace('.jpg', '')+".npz.npy")[:, :4]
             boxx = np.ones((boxes.shape[0], 1))*image_w
             boxy = np.ones((boxes.shape[0], 1))*image_h
             boxes = np.concatenate((boxx, boxy, boxx, boxy), axis=1)*boxes
             num_boxes = boxes.shape[0]
-            print(img_name)
-            print(num_boxes)
         except:
             print("error")
         '''

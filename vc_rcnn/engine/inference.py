@@ -20,6 +20,9 @@ def compute_on_dataset(model, data_loader, device, timer=None):
     results_dict = {}
     cpu_device = torch.device("cpu");i=0
     for _, batch in enumerate(tqdm(data_loader)):
+        i+=1
+        if i <= 70000:
+            continue
         images, targets, image_ids = batch
         with torch.no_grad():
             if timer:
