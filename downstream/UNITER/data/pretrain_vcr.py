@@ -170,23 +170,25 @@ class MrfrDatasetForVCR(VcrPretrainDataset):
         # load vc feature to UNITER pretrain (mrfr)
         try:
             vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
-            vc_feat = np.load('vc_feature_final/' + vc_name)
+            vc_feat = torch.Tensor(np.load('vc_feature_final/'+vc_name))
+            vc_feat_gt = torch.Tensor(np.load('vc_feature_gt/'+vc_name))
+            vc_feat = torch.cat([vc_feat_gt, vc_feat], dim=0)
         except:
             #vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
             #vc_feat = np.load('vc_feature_final/' + vc_name)
             vc_feat = img_feat
-            vc_name = "Nan"
+            print('error')
 
-
-        print(num_bb)
-        print(vc_feat.shape)
-        print(vc_name)
+        #print(num_bb)
+        #print(vc_feat.shape)
+        #print(vc_feat_gt.shape)
+        #print(vc_name)
         return (input_ids, txt_type_ids, img_feat, img_pos_feat,
                 attn_masks, img_mask, img_mask_tgt, vc_feat)
 
 
 def mrfr_collate_for_vcr(inputs):
-    import ipdb;ipdb.set_trace(context=10)
+    #import ipdb;ipdb.set_trace(context=10)
     (input_ids, txt_type_ids, img_feats, img_pos_feats,
      attn_masks, img_masks, img_mask_tgts, vc_feats) = map(list, unzip(inputs))
 
@@ -197,6 +199,10 @@ def mrfr_collate_for_vcr(inputs):
     # mask features
     img_masks = pad_sequence(img_masks, batch_first=True, padding_value=0)
     feat_targets = _get_feat_target(batch['img_feat'], img_masks)
+    ### pretrain by vc feat
+    vc_feat_targets = _get_feat_target(batch['vc_feat'], img_masks)
+    batch['vc_feat_targets'] = vc_feat_targets
+    ### 
     img_mask_tgt = pad_sequence(
         img_mask_tgts, batch_first=True, padding_value=0)
     batch['img_feat'] = _mask_img_feat(batch['img_feat'], img_masks)

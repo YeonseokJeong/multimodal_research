@@ -253,6 +253,9 @@ class UniterImageEmbeddings(nn.Module):
         self.pos_layer_norm = FusedLayerNorm(config.hidden_size, eps=1e-12)
         self.pos_linear = nn.Linear(7, config.hidden_size)
         self.mask_embedding = nn.Embedding(2, img_dim, padding_idx=0)
+        ### pretrain by vc feat
+        self.vc_img_linear = nn.Linear(1024, config.hidden_size)
+        ###
 
         # tf naming convention for layer norm
         self.LayerNorm = FusedLayerNorm(config.hidden_size, eps=1e-12)

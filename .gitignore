@@ -5,7 +5,8 @@ downstream/UNITER/vcr_data/
 data3/
 ### VC Feature in UNITER
 downstream/UNITER/vc_feature
-
+downstream/UNITER/vc_feature_gt
+downstream/UNITER/vc_feature_final
 # pretrained model
 pretrained/
 
@@ -18,15 +19,24 @@ downstream/UNITER/storage
 downstream/UNITER/output
 downstream/UNITER/ouput1
 downstream/UNITER/output2
+downstream/UNITER/output3
+downstream/UNITER/output5
 downstream/UNITER/output_train
 downstream/UNITER/output_val
 downstream/UNITER/output_test
 ### UNITER bouding box
+downstream/UNITER/bbox_set
 downstream/UNITER/bbox
+downstream/UNITER/bbox_gt
 downstream/UNITER/bbox_train
 downstream/UNITER/bbox_val
 downstream/UNITER/bbox_test
+downstream/UNITER/bbox_gt_train
+downstream/UNITER/bbox_gt_val
+downstream/UNITER/bbox_gt_test
 downstream/UNITER/bbox_ver1
+downstream/UNITER/bbox.tar
+downstream/UNITER/bbox_gt.tar
 
 # etc
 __pycache__

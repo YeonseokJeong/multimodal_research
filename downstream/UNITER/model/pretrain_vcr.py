@@ -50,14 +50,15 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrfr_feat_target = batch['feat_targets']
-            
+            ### pretrain by vc_feat
             vc_feat = batch['vc_feat']
+            mrfr_vc_feat_target = batch['vc_feat_targets']
 
             return self.forward_mrfr(input_ids, position_ids,
                                      txt_type_ids, img_feat, img_pos_feat,
                                      attention_mask, gather_index,
                                      img_masks, img_mask_tgt,
-                                     mrfr_feat_target, vc_feat, compute_loss)
+                                     mrfr_feat_target, vc_feat, mrfr_vc_feat_target, compute_loss)
         elif task.startswith('mrc'):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
@@ -98,20 +99,20 @@ class UniterForPretrainingForVCR(UniterForPretraining):
     def forward_mrfr(self, input_ids, position_ids, txt_type_ids,
                      img_feat, img_pos_feat,
                      attention_mask, gather_index, img_masks, img_mask_tgt,
-                     feat_targets, compute_loss=True):
+                     feat_targets, vc_feat, mrfr_vc_feat_target, compute_loss=True):
         sequence_output = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attention_mask, gather_index,
                                       output_all_encoded_layers=False,
                                       img_masks=img_masks,
                                       txt_type_ids=txt_type_ids)
-
+        import ipdb;ipdb.set_trace(context=10)
         # only compute masked tokens for better efficiency
         masked_output = self._compute_masked_hidden(sequence_output,
                                                     img_mask_tgt)
-        if vc_feat.shape[1]==1024:
+        if vc_feat.shape[-1]==1024:
             prediction_feat = self.feat_regress_vc(masked_output)
-            feat_targets = vc_feat
+            feat_targets = mrfr_vc_feat_target
         else:
             prediction_feat = self.feat_regress(masked_output)
 
