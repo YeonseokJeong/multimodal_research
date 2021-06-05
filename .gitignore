@@ -7,6 +7,8 @@ data3/
 downstream/UNITER/vc_feature
 downstream/UNITER/vc_feature_gt
 downstream/UNITER/vc_feature_final
+downstream/UNITER/vc_feature_gt.tar
+downstream/UNITER/vc_feature_final.tar
 # pretrained model
 pretrained/
 
@@ -17,6 +19,7 @@ output_test/
 ### UNITER 
 downstream/UNITER/storage
 downstream/UNITER/output
+downstream/UNITER/output_pretrain1
 downstream/UNITER/ouput1
 downstream/UNITER/output2
 downstream/UNITER/output3
@@ -24,6 +27,7 @@ downstream/UNITER/output5
 downstream/UNITER/output_train
 downstream/UNITER/output_val
 downstream/UNITER/output_test
+downstream/UNITER/output_pretrain2_2000_val_error
 ### UNITER bouding box
 downstream/UNITER/bbox_set
 downstream/UNITER/bbox
@@ -42,4 +46,4 @@ downstream/UNITER/bbox_gt.tar
 __pycache__
 *.pyc
 downstream/UNITER/find.py
-
+downstream/UNITER/nohup.out
