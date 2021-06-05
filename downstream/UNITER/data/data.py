@@ -264,7 +264,7 @@ def pad_tensors(tensors, lens=None, pad=0):
     if pad:
         output.data.fill_(pad)
     for i, (t, l) in enumerate(zip(tensors, lens)):
-        output.data[i, :l, ...] = t.data
+        output.data[i, :l, ...] = t.data;
     return output
 
 

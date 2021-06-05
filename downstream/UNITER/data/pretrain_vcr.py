@@ -172,12 +172,34 @@ class MrfrDatasetForVCR(VcrPretrainDataset):
             vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
             vc_feat = torch.Tensor(np.load('vc_feature_final/'+vc_name))
             vc_feat_gt = torch.Tensor(np.load('vc_feature_gt/'+vc_name))
+            
+            nbbox_gt = self.img_db_gt[example['img_fname'][0]][0].shape[0]
+            nbbox = self.img_db[example['img_fname'][1]][0].shape[0]
+
+            '''
+            if img_feat.shape[0]!=vc_feat.shape[0]+vc_feat_gt.shape[0]:
+                print('\n*****************************')
+                print(nbbox, nbbox_gt)
+                print('\n*****************************')
+                print(vc_feat.shape, vc_feat_gt.shape)
+            '''
+            if nbbox_gt > vc_feat_gt.shape[0]:
+                vc_feat_gt = torch.cat((vc_feat_gt, torch.Tensor(nbbox_gt-vc_feat_gt.shape[0], vc_feat_gt.shape[1])), dim=0)
+            if nbbox_gt < vc_feat_gt.shape[0]:
+                vc_feat_gt.data = vc_feat_gt.data[:nbbox_gt, :]
+            if nbbox > vc_feat.shape[0]:
+                vc_feat = torch.cat((vc_feat, torch.Tensor(nbbox-vc_feat.shape[0], vc_feat.shape[1])), dim=0)
+            if nbbox < vc_feat_gt.shape[0]:
+                vc_feat.data = vc_feat.data[:nbbox, :]
             vc_feat = torch.cat([vc_feat_gt, vc_feat], dim=0)
+            if vc_feat.shape[0]!=img_feat.shape[0]:
+                print('warning')
+            #assert vc_feat.shape[0]==img_feat.shape[0]
         except:
             #vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
             #vc_feat = np.load('vc_feature_final/' + vc_name)
             vc_feat = img_feat
-            print('error')
+            print('error data')
 
         #print(num_bb)
         #print(vc_feat.shape)
@@ -188,7 +210,7 @@ class MrfrDatasetForVCR(VcrPretrainDataset):
 
 
 def mrfr_collate_for_vcr(inputs):
-    #import ipdb;ipdb.set_trace(context=10)
+   # import ipdb;ipdb.set_trace(context=10)
     (input_ids, txt_type_ids, img_feats, img_pos_feats,
      attn_masks, img_masks, img_mask_tgts, vc_feats) = map(list, unzip(inputs))
 

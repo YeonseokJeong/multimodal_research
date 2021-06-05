@@ -260,7 +260,7 @@ def main(opts):
     start = time()
     # quick hack for amp delay_unscale bug
     optimizer.zero_grad()
-    optimizer.step()
+    optimizer.step();validate(model, val_dataloaders)
     for step, (name, batch) in enumerate(meta_loader):
         # forward pass
         n_examples[name] += batch['input_ids'].size(0)
