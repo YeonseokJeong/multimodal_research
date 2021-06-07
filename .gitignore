@@ -28,6 +28,9 @@ downstream/UNITER/output_train
 downstream/UNITER/output_val
 downstream/UNITER/output_test
 downstream/UNITER/output_pretrain2_2000_val_error
+downstream/UNITER/output_pretrain3_2200_val_error
+downstream/UNITER/output_pretrain4_7700_train_error
+downstream/UNITER/output_pretrain5_2600_success
 ### UNITER bouding box
 downstream/UNITER/bbox_set
 downstream/UNITER/bbox
