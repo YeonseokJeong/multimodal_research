@@ -79,9 +79,9 @@ class VcrDetectFeatTxtTokDataset(DetectFeatTxtTokDataset):
             img_feat, bb = self.img_db[fname]
             img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
             ### extract uniter bbox
-            real_name = '_'.join(fname.split('_')[2:])
-            np.save("./bbox_val/"+real_name+".npy", bb.numpy())
-            np.save("./bbox_gt_val/"+real_name+".npy", bb_gt.numpy())
+            #real_name = '_'.join(fname.split('_')[2:])
+            #np.save("./bbox_val/"+real_name+".npy", bb.numpy())
+            #np.save("./bbox_gt_val/"+real_name+".npy", bb_gt.numpy())
             ###
             img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
             img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
