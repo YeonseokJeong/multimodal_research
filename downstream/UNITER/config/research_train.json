@@ -1,6 +1,6 @@
 {
-    "train_txt_dbs": ["./vcr_data/txt_db/vcr_val.db/"],
-    "train_img_dbs": ["./vcr_data/img_db/vcr_gt_val/;./vcr_data/img_db/vcr_val/"],
+    "train_txt_dbs": ["./vcr_data/txt_db/vcr_train.db/"],
+    "train_img_dbs": ["./vcr_data/img_db/vcr_gt_train/;./vcr_data/img_db/vcr_train/"],
     "val_txt_db": "./vcr_data/txt_db/vcr_val.db/",
     "val_img_db": "./vcr_data/img_db/vcr_gt_val/;/img/vcr_val/",
     "checkpoint": "output_success_45000/ckpt/model_step_45000.pt",
