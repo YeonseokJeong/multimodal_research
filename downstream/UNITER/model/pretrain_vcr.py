@@ -108,6 +108,9 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                       txt_type_ids=txt_type_ids)
         # only compute masked tokens for better efficiency
         masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+        #for vc in range(mrfr_vc_feat_target.shape[0]):
+        #  if mrfr_vc_feat_target[vc].sum()<0:
+        #    import ipdb;ipdb.set_trace(context=10)
         #import ipdb;ipdb.set_trace(context=10)
         if vc_feat.shape[-1]==1024:
             prediction_feat = self.feat_regress_vc(masked_output)

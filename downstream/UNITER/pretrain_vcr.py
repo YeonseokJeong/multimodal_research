@@ -263,12 +263,19 @@ def main(opts):
     optimizer.step();
     for step, (name, batch) in enumerate(meta_loader):
         # forward pass
+        '''
+        if name.startswith('mrfr'):
+          #import ipdb;ipdb.set_trace(context=10)
+          for vc in range(batch['vc_feat_targets'].shape[0]):
+            if batch['vc_feat_targets'][vc].sum() < -1:
+              import ipdb;ipdb.set_trace(context=10)
+        '''
         n_examples[name] += batch['input_ids'].size(0)
         n_in_units[name] += (batch['attn_masks'] == 1).sum().item()
         task = name.split('_')[0]
         loss = model(batch, task=task, compute_loss=True)
-        #if torch.isinf(loss).any():
-        #    import ipdb;ipdb.set_trace(context=10)
+        if torch.isinf(loss).any():
+            loss = torch.zeros_like(loss)
         n_loss_units[name] += loss.size(0)
         loss = loss.mean()  # loss is not normalized in model
 
@@ -403,14 +410,21 @@ def accuracy_count(out, labels):
 def validate_mrfr(model, val_loader):
     LOGGER.info("start running MRFR validation...")
     val_loss = 0
-    n_feat = 0
+    n_feat = 0;#pbar = tqdm(total=2000)
     st = time();#import ipdb;ipdb.set_trace(context=10)
     for i, batch in enumerate(val_loader):
+        '''
+        for vc in range(batch['vc_feat_targets'].shape[0]):
+          if batch['vc_feat_targets'][vc].sum() < -1:
+            import ipdb;ipdb.set_trace(context=10)
+        '''
         loss = model(batch, task='mrfr', compute_loss=True)
-        #if torch.isinf(loss).any():
+        if torch.isinf(loss).any():
+            loss = torch.zeros_like(loss)
+        #if torch.isinf(loss.sum()).any():
         #    import ipdb;ipdb.set_trace(context=10)
         val_loss += loss.sum().item() / IMG_DIM
-        n_feat += batch['img_mask_tgt'].sum().item()
+        n_feat += batch['img_mask_tgt'].sum().item();#pbar.update(1)
     val_loss = sum(all_gather_list(val_loss));#import ipdb;ipdb.set_trace(context=10)
     n_feat = sum(all_gather_list(n_feat))
     tot_time = time()-st

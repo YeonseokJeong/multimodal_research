@@ -191,11 +191,17 @@ class MrfrDatasetForVCR(VcrPretrainDataset):
                 vc_feat = torch.cat((vc_feat, torch.Tensor(nbbox-vc_feat.shape[0], vc_feat.shape[1])), dim=0)
             if nbbox < vc_feat_gt.shape[0]:
                 vc_feat.data = vc_feat.data[:nbbox, :]
+            '''
+            if nbbox_gt != vc_feat_gt.shape[0] or nbbox != vc_feat.shape[0]:
+                vc_feat = torch.full((nbbox, 1024), -2)
+                vc_feat_gt = torch.full((nbbox_gt, 1024), -2)
+            '''
             vc_feat = torch.cat([vc_feat_gt, vc_feat], dim=0)
             if vc_feat.shape[0]!=img_feat.shape[0]:
                 print('warning')
             #assert vc_feat.shape[0]==img_feat.shape[0]
         except:
+          #import ipdb;ipdb.set_trace(context=10)
             #vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
             #vc_feat = np.load('vc_feature_final/' + vc_name)
             vc_feat = img_feat
@@ -217,7 +223,9 @@ def mrfr_collate_for_vcr(inputs):
     batch = vcr_mrfr_pretrain_collate(
         input_ids, txt_type_ids, img_feats,
         img_pos_feats, attn_masks, vc_feats)
-
+    #for vc in vc_feats:
+      #if vc.sum() < 0:
+        #import ipdb;ipdb.set_trace(context=10)
     # mask features
     img_masks = pad_sequence(img_masks, batch_first=True, padding_value=0)
     feat_targets = _get_feat_target(batch['img_feat'], img_masks)
