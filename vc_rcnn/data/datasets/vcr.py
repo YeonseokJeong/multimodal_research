@@ -46,8 +46,26 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
         self.img_root = datadir
         self.transforms = transforms
         #self.image_pth = '/data3/wangtan/openimage/target_dir/coco_debug/images/train2017'
-
-
+        ### make label dic (for making confounder dictionary)
+        f = open('./object_tags.txt', 'r')
+        label_idx = 1
+        label_dic = {}
+        while True:
+            line = f.readline()
+            if not line : break
+            line = line[:-1]
+            if len(line.split(',')) > 1:
+                for i in range(len(line.split(','))):
+                    label_dic[line.split(',')[i]] = label_idx
+                    if len(line.split(',')[i].split(' ')) > 1:
+                        label_dic[line.split(',')[i].replace(' ', '')] = label_idx
+            else:
+                label_dic[line] = label_idx
+                if len(line.split(' ')) > 1:
+                    label_dic[line.replace(' ', '')] = label_idx
+            label_idx += 1
+        self.label_dic = label_dic
+        ###
 
         # self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
         self._transforms = transforms
@@ -84,12 +102,11 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
             image_w = int(item['image_w'])
             num_boxes = int(item['num_boxes'])
             boxes = np.frombuffer(base64.b64decode(item['boxes']), dtype=np.float32).reshape(num_boxes, 4)
-
-        #import ipdb;ipdb.set_trace(context=10)
+        # import ipdb;ipdb.set_trace(context=10)
         ### extract vc feature by uniter bounding box
-
+        '''
         try:
-            root = "/home/jys3136/multimodal_research/downstream/UNITER/bbox_gt/"
+            root = "./downstream/UNITER/bbox_gt/"
             boxes = np.load(root + img_name.split('/')[1].replace('.jpg', '')+".npz.npy")[:, :4]
             boxx = np.ones((boxes.shape[0], 1))*image_w
             boxy = np.ones((boxes.shape[0], 1))*image_h
@@ -98,12 +115,16 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
         except:
             print("error")
         '''
-        root = "/home/jys3136/multimodal_research/downstream/UNITER/bbox/";print(root+img_name.split('/')[1].replace('.jpg',''))
-        boxes = np.load(root + img_name.split('/')[1].replace('.jpg', '')+".npz.npy");print(boxes.shape)
-        boxx = np.ones((boxes.shape[0], 1))*image_w;print(boxx)
-        boxy = np.ones((boxes.shape[0], 1))*image_h
-        boxes = np.concatenate((boxx, boxy, boxx, boxy), axis=1)*boxes'''
         ### 
+
+        ### add label field (for making confounder dictionary)
+        json_path = img_path[:-3]+"json"
+        with open(json_path) as json_file:
+            json_data = json.load(json_file)
+            label = list(map(self.label2idx, json_data["names"]))
+            boxes = np.array(json_data['boxes'])[:, :-1]
+        ### 
+
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
         target = BoxList(boxes, img.size, mode="xyxy")
 
@@ -111,6 +132,7 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
             assert img.size[1] == image_h and img.size[0] == image_w
         except AssertionError:
             print(image_id)
+            print('***************************')
 
         w, h = img.size[0], img.size[1]
         sizes = [[w, h] for i in range(boxes.size(0))]
@@ -124,12 +146,15 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
         numm = [num_boxes for i in range(boxes.size(0))]
         numm = torch.tensor(numm)
         target.add_field("num_box", numm)
- 
+        
         target = target.clip_to_image(remove_empty=False)
 
         if self.transforms is not None:
             img, target = self.transforms(img, target)
 
+        ### add label field (for making confounder dictionary)
+        target.add_field("labels", label)
+        ###
         return img, target, idx
 
 
@@ -150,4 +175,14 @@ class vcrDataset(torchvision.datasets.coco.CocoDetection):
                 image_ann.append(ann)
         return image_ann
 
-
+    ### add label field (for making confounder dictionary)
+    def label2idx(self, label):
+        if label in self.label_dic.keys():
+            return self.label_dic[label]
+        
+        else:
+            f = open('./vcr_etc_label.txt', 'a')
+            f.write(label+"\n")
+            f.close()
+            return 0
+    ###

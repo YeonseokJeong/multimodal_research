@@ -60,7 +60,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                      img_masks, img_mask_tgt,
                                      mrfr_feat_target, vc_feat, mrfr_vc_feat_target, compute_loss)
         elif task.startswith('mrc'):
-            img_mask_tgt = batch['img_mask_tgt']
+            img_mask_tgt = batch['img_mask_tgt'];import ipdb;ipdb.set_trace(context=10)
             img_masks = batch['img_masks']
             mrc_label_target = batch['label_targets']
             return self.forward_mrc(input_ids, position_ids,

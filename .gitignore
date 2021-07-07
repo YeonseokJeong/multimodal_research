@@ -1,6 +1,8 @@
 # data
 ### VCR Dataset (MOVIE CLIP)
 downstream/UNITER/vcr_data/
+### Indomain Dataset
+downstream/UNITER/indomain_data/
 ### additional feature 
 data3/
 ### VC Feature in UNITER
@@ -50,11 +52,19 @@ downstream/UNITER/bbox_ver1
 downstream/UNITER/bbox.tar
 downstream/UNITER/bbox_gt.tar
 
+# files for do-calculus
+dic_coco*
+stat_prob*
+object_tags.txt 
+downstream/UNITER/vcr_etc_label.txt
+vcr_etc_label.txt
+
 # etc
 __pycache__
 *.pyc
 downstream/UNITER/find.py
 downstream/UNITER/nohup.out
+nohup.out
 
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks

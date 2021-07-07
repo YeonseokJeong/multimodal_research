@@ -54,7 +54,7 @@ class ROIBoxHead(torch.nn.Module):
         class_logits_causal_list = self.causal_predictor(x, proposals)
         # pdb.set_trace()
 
-
+        
         if not self.training:
 
             result = self.post_processor_gt(x, class_logits, proposals)

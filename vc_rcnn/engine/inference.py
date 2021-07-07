@@ -13,12 +13,16 @@ from ..utils.comm import all_gather
 from ..utils.comm import synchronize
 from ..utils.timer import Timer, get_time_str
 from .bbox_aug import im_detect_bbox_aug
-
+import numpy as np
 
 def compute_on_dataset(model, data_loader, device, timer=None):
     model.eval()
     results_dict = {}
     cpu_device = torch.device("cpu");i=0
+    ### build confounder dictionary
+    confounder_dictionary = np.zeros((1601, 1024))
+    counter = np.zeros(1601)
+    ###
     for _, batch in enumerate(tqdm(data_loader)):
         ###i+=1
         ###if i <= 70000:
@@ -39,6 +43,17 @@ def compute_on_dataset(model, data_loader, device, timer=None):
         results_dict.update(
             {img_id: result for img_id, result in zip(image_ids, output)}
         )
+    ### build confounder dictionary
+        for i in range(len(output)):
+            for j in range(len(output[i].get_field('labels'))):
+                confounder_dictionary[output[i].get_field('labels')[j]] = confounder_dictionary[output[i].get_field('labels')[j]] + output[i].get_field('features')[j].numpy()
+                counter[output[i].get_field('labels')[j]] += 1
+    prior = counter / np.sum(counter)
+    np.save('./stat_prob_vcr.npy', prior)
+    counter = np.where(counter==0, 1e-6, counter)
+    confounder_dictionary = confounder_dictionary / counter[:, np.newaxis]
+    np.save('./dic_coco_vcr.npy', confounder_dictionary)
+    ###
     return results_dict
 
 
