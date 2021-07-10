@@ -11,8 +11,12 @@ downstream/UNITER/vc_feature_gt
 downstream/UNITER/vc_feature_final
 downstream/UNITER/vc_feature_gt.tar
 downstream/UNITER/vc_feature_final.tar
+
 # pretrained model
 pretrained/
+### VC R-CNN pretrained model
+model_final.pth
+last_checkpoint
 
 # output
 ### VC R-CNN
@@ -38,6 +42,7 @@ downstream/UNITER/output_success_45000
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
 downstream/UNITER/finetune_output
+downstream/UNITER/vcr_train_output
 ### UNITER bouding box
 downstream/UNITER/bbox_set
 downstream/UNITER/bbox
@@ -51,6 +56,8 @@ downstream/UNITER/bbox_gt_test
 downstream/UNITER/bbox_ver1
 downstream/UNITER/bbox.tar
 downstream/UNITER/bbox_gt.tar
+### confounder dictionary & prior
+downstream/UNITER/conf_and_prior
 
 # files for do-calculus
 dic_coco*

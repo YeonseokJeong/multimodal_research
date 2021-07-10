@@ -144,7 +144,7 @@ def main(opts):
                                  collate_fn=vcr_eval_collate)
     eval_dataloader = PrefetchLoader(eval_dataloader)
 
-    _, results = evaluate(model, eval_dataloader)
+    _, results = evaluate(model, eval_dataloader, opts)
     result_dir = f'{opts.output_dir}/results_{opts.split}'
     if not exists(result_dir) and rank == 0:
         os.makedirs(result_dir)
@@ -162,7 +162,7 @@ def main(opts):
 
 
 @torch.no_grad()
-def evaluate(model, eval_loader):
+def evaluate(model, eval_loader, opts):
     model.eval()
     LOGGER.info("start running evaluation ...")
     if hvd.rank() == 0:
@@ -206,6 +206,9 @@ def evaluate(model, eval_loader):
             results[qid] = score.cpu().tolist()
         n_ex += len(qids)
         val_pbar.update(1)
+    ### compute confounder dictionary : save npy files
+    model.save_conf_prior(opts)
+    ###
     val_qa_loss = sum(all_gather_list(val_qa_loss))### ;return ### 
     val_qar_loss = sum(all_gather_list(val_qar_loss))
     tot_qa_score = sum(all_gather_list(tot_qa_score))

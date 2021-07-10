@@ -165,7 +165,7 @@ class MrcDataset(DetectFeatTxtTokDataset):
 def mrc_collate(inputs):
     (input_ids, img_feats, img_pos_feats, img_soft_labels,
      attn_masks, img_masks, img_mask_tgts) = map(list, unzip(inputs))
-
+    
     txt_lens = [i.size(0) for i in input_ids]
     num_bbs = [f.size(0) for f in img_feats]
 

@@ -5,7 +5,8 @@ Licensed under the MIT license.
 Uniter for VCR model
 """
 from collections import defaultdict
-
+import numpy as np
+import os
 from torch import nn
 from torch.nn import functional as F
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
@@ -28,6 +29,12 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
             nn.Linear(config.hidden_size*2, 2)
         )
         self.apply(self.init_weights)
+        ### compute confounder dictionary : prepare initialized confounder dictionary & prior
+        self.conf_dict = np.zeros((1601, config.hidden_size))
+        self.conf_dict_gt = np.zeros((1601, config.hidden_size))
+        self.prior = np.zeros(1601)
+        self.prior_gt = np.zeros(1601)
+        ###
 
     def init_type_embedding(self):
         new_emb = nn.Embedding(4, self.uniter.config.hidden_size)
@@ -63,6 +70,25 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
                                       attn_masks, gather_index,
                                       output_all_encoded_layers=False,
                                       txt_type_ids=txt_type_ids)
+        ### compute confounder dictionary : extract soft label
+        img_soft_label = batch['img_soft_label']
+        img_gt_soft_label = batch['img_gt_soft_label']
+        img_tot_soft_label = batch['img_tot_soft_label']
+        txt_lens = batch['txt_lens']#;import ipdb;ipdb.set_trace(context=10)
+        for batch_idx in range(len(sequence_output)):
+            img_set = sequence_output[batch_idx][txt_lens[batch_idx]:]
+            if sequence_output.shape[1] < len(img_gt_soft_label[batch_idx]) + len(img_soft_label[batch_idx]) + txt_lens[batch_idx]:
+                print("error : text + image < image(gt+nongt)")
+            for gt_idx in range(len(img_gt_soft_label[batch_idx])):
+                label_gt = img_gt_soft_label[batch_idx][gt_idx].argmax()
+                self.prior_gt[label_gt] += 1
+                self.conf_dict_gt[label_gt] += img_set[gt_idx].cpu().numpy()
+            for nongt_idx in range(len(img_soft_label[batch_idx])):
+                label = img_soft_label[batch_idx][nongt_idx].argmax()
+                self.prior[label] += 1
+                self.conf_dict[label] += img_set[gt_idx+nongt_idx].cpu().numpy()
+        ###
+
         pooled_output = self.uniter.pooler(sequence_output)
         rank_scores = self.vcr_output(pooled_output)
 
@@ -75,3 +101,14 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
         else:
             rank_scores = rank_scores[:, 1:]
             return rank_scores
+    
+    def save_conf_prior(self, opts):
+        #self.conf_dict = self.conf_dict / prior[: np.newaxis]
+        #self.conf_dict_gt = self.conf_dict_gt / prior_gt[: np.newaxis]
+        os.makedirs('./conf_and_prior', exist_os=True)
+        np.save(f'./conf_and_prior/{opts.split}_dic_vcr_nongt_uniter.npy', self.conf_dict)
+        np.save(f'./conf_and_prior/{opts.split}_dic_vcr_gt_uniter.npy', self.conf_dict_gt)
+        #self.prior = self.prior / np.sum(self.prior)
+        #self.prior_gt = self.prior_gt / np.sum(self.prior_gt)
+        np.save(f'./conf_and_prior/{opts.split}_stat_prob_vcr_nongt_uniter.npy', self.prior)
+        np.save(f'./conf_and_prior/{opts.split}_stat_prob_vcr_gt_uniter.npy', self.prior_gt)
