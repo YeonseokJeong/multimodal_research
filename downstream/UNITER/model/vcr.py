@@ -30,8 +30,8 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
         )
         self.apply(self.init_weights)
         ### compute confounder dictionary : prepare initialized confounder dictionary & prior
-        self.conf_dict = np.zeros((1601, config.hidden_size))
-        self.conf_dict_gt = np.zeros((1601, config.hidden_size))
+        self.conf_dict = np.zeros((1601, img_dim))
+        self.conf_dict_gt = np.zeros((1601, img_dim))
         self.prior = np.zeros(1601)
         self.prior_gt = np.zeros(1601)
         ###
@@ -70,15 +70,15 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
                                       attn_masks, gather_index,
                                       output_all_encoded_layers=False,
                                       txt_type_ids=txt_type_ids)
-        ### compute confounder dictionary : extract soft label
+        ### compute confounder dictionary 2 : extract soft label
         img_soft_label = batch['img_soft_label']
         img_gt_soft_label = batch['img_gt_soft_label']
         img_tot_soft_label = batch['img_tot_soft_label']
-        txt_lens = batch['txt_lens']#;import ipdb;ipdb.set_trace(context=10)
-        for batch_idx in range(len(sequence_output)):
-            img_set = sequence_output[batch_idx][txt_lens[batch_idx]:]
-            if sequence_output.shape[1] < len(img_gt_soft_label[batch_idx]) + len(img_soft_label[batch_idx]) + txt_lens[batch_idx]:
-                print("error : text + image < image(gt+nongt)")
+        
+        for batch_idx in range(len(img_feat)):
+            img_set = img_feat[batch_idx]
+            if img_set.shape[1] < len(img_gt_soft_label[batch_idx]) + len(img_soft_label[batch_idx]):
+                print("error : image < image(gt+nongt)")
             for gt_idx in range(len(img_gt_soft_label[batch_idx])):
                 label_gt = img_gt_soft_label[batch_idx][gt_idx].argmax()
                 self.prior_gt[label_gt] += 1
@@ -86,7 +86,7 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
             for nongt_idx in range(len(img_soft_label[batch_idx])):
                 label = img_soft_label[batch_idx][nongt_idx].argmax()
                 self.prior[label] += 1
-                self.conf_dict[label] += img_set[gt_idx+nongt_idx].cpu().numpy()
+                self.conf_dict[label] += img_set[gt_idx+1+nongt_idx].cpu().numpy()
         ###
 
         pooled_output = self.uniter.pooler(sequence_output)

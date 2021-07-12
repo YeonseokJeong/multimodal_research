@@ -235,11 +235,46 @@ class VcrEvalDataset(VcrDetectFeatTxtTokDataset):
                     input_ids_for_choices.append(curr_input_ids_qar)
                     type_ids_for_choices.append(curr_type_ids_qar)
         return input_ids_for_choices, type_ids_for_choices
+    
+    ### calculate confounder dictionary & prior 2 : prepare method to extract label
+    def _get_img_feat_for_db(self, img_db, fname):
+        img_dump = img_db.get_dump(fname)
+        img_feat = torch.tensor(img_dump['features'])
+        bb = torch.tensor(img_dump['norm_bb'])
+        img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
+        img_soft_label = torch.tensor(img_dump['soft_labels'])
+        return img_feat, img_bb, img_soft_label
 
+    def _get_img_feat(self, fname_gt, fname):
+        if self.img_db and self.img_db_gt:
+            (img_feat_gt, img_bb_gt,
+             img_soft_label_gt) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+
+            img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
+            img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
+            img_soft_label = torch.cat(
+                [img_soft_label_gt, img_soft_label], dim=0)
+        elif self.img_db:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+        else:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+        num_bb = img_feat.size(0)
+        return img_feat, img_bb, img_soft_label, num_bb
+    ###
+    
     def __getitem__(self, i):
         qid = self.ids[i]
         example = super().__getitem__(i)
-        img_feat, img_pos_feat, num_bb = self._get_img_feat(
+        img_feat, img_pos_feat, img_tot_soft_label, num_bb = self._get_img_feat(
             example['img_fname'][0], example['img_fname'][1])
         ### compute confounder dictionary : extract soft label
         img_soft_label = self.img_db.get_dump(example['img_fname'][1])['soft_labels']
@@ -252,6 +287,7 @@ class VcrEvalDataset(VcrDetectFeatTxtTokDataset):
 
         outs = []
         for index, input_ids in enumerate(input_ids_for_choices):
+
             attn_masks = torch.ones(
                 len(input_ids) + num_bb, dtype=torch.long)
 
@@ -262,16 +298,16 @@ class VcrEvalDataset(VcrDetectFeatTxtTokDataset):
             outs.append(
                 (input_ids, txt_type_ids,
                  img_feat, img_pos_feat,
-                 attn_masks, img_soft_label, img_gt_soft_label)) ### compute confounder dictionary : extract soft label
+                 attn_masks, img_soft_label, img_gt_soft_label, img_tot_soft_label)) ### compute confounder dictionary : extract soft label
 
         return tuple(outs), qid, qa_target, qar_target
 
 
 def vcr_eval_collate(inputs):
     (input_ids, txt_type_ids, img_feats,
-     img_pos_feats, attn_masks, img_soft_label, img_gt_soft_label) = map(
+     img_pos_feats, attn_masks, img_soft_label, img_gt_soft_label, img_tot_soft_label) = map(
          list, unzip(concat(outs for outs, _, _, _ in inputs)))
-    #import ipdb;ipdb.set_trace(context=10)
+    # import ipdb;ipdb.set_trace(context=10)
 
     txt_lens = [i.size(0) for i in input_ids]
     input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
@@ -298,8 +334,8 @@ def vcr_eval_collate(inputs):
     qids = [id_ for _, id_, _, _ in inputs]
     
     ### compute confounder dictionary : extract soft label
-    img_tot_soft_label = [torch.Tensor(np.concatenate((img_soft_label[i], img_gt_soft_label[i]), axis=0)) for i in range(len(img_soft_label))]
-    img_tot_soft_label = pad_tensors(img_tot_soft_label, num_bbs)
+    #img_tot_soft_label = [torch.Tensor(np.concatenate((img_soft_label[i], img_gt_soft_label[i]), axis=0)) for i in range(len(img_soft_label))]
+    #img_tot_soft_label = pad_tensors(img_tot_soft_label, num_bbs)
     #img_soft_label = torch.Tensor(img_soft_label)
     #img_gt_soft_label = torch.Tensor(img_gt_soft_label)
     ### 
