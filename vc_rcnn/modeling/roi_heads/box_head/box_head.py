@@ -46,7 +46,7 @@ class ROIBoxHead(torch.nn.Module):
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
         x = self.feature_extractor(features, proposals)
-
+        import ipdb;ipdb.set_trace(context=10)
         # self predictor
         class_logits = self.predictor(x)
 

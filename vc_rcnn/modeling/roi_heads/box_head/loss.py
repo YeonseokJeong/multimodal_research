@@ -128,7 +128,7 @@ class FastRCNNLossComputation(object):
             classification_loss (Tensor)
             box_loss (Tensor)
         """
-
+        
         class_logits = cat(class_logits, dim=0)
         device = class_logits.device
 

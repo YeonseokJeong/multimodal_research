@@ -260,7 +260,7 @@ def main(opts):
     start = time()
     # quick hack for amp delay_unscale bug
     optimizer.zero_grad()
-    optimizer.step();
+    optimizer.step()
     for step, (name, batch) in enumerate(meta_loader):
         # forward pass
         '''
@@ -273,11 +273,18 @@ def main(opts):
         n_examples[name] += batch['input_ids'].size(0)
         n_in_units[name] += (batch['attn_masks'] == 1).sum().item()
         task = name.split('_')[0]
-        loss = model(batch, task=task, compute_loss=True)
+        loss, loss_classifier, loss_causal = model(batch, task=task, compute_loss=True)
+        ### use 'do-calculus' in UNITER pretrain : calculate total loss
+        # loss, loss_classifier, loss_causal = loss
+        ###
         if torch.isinf(loss).any():
             loss = torch.zeros_like(loss)
         n_loss_units[name] += loss.size(0)
         loss = loss.mean()  # loss is not normalized in model
+        
+        ### use 'do-calculus' in UNITER pretrain : calculate total loss
+        loss = loss + loss_classifier + loss_causal
+        ###
 
         # backward pass
         delay_unscale = (step+1) % opts.gradient_accumulation_steps != 0
@@ -410,6 +417,8 @@ def accuracy_count(out, labels):
 def validate_mrfr(model, val_loader):
     LOGGER.info("start running MRFR validation...")
     val_loss = 0
+    val_loss_classifier = 0
+    val_loss_causal = 0
     n_feat = 0;#pbar = tqdm(total=2000)
     st = time();#import ipdb;ipdb.set_trace(context=10)
     for i, batch in enumerate(val_loader):
@@ -418,21 +427,27 @@ def validate_mrfr(model, val_loader):
           if batch['vc_feat_targets'][vc].sum() < -1:
             import ipdb;ipdb.set_trace(context=10)
         '''
-        loss = model(batch, task='mrfr', compute_loss=True)
+        loss, loss_classifier, loss_causal = model(batch, task='mrfr', compute_loss=True)
         if torch.isinf(loss).any():
             loss = torch.zeros_like(loss)
         #if torch.isinf(loss.sum()).any():
         #    import ipdb;ipdb.set_trace(context=10)
         val_loss += loss.sum().item() / IMG_DIM
+        val_loss_classifier += loss_classifier
+        val_loss_causal += loss_causal
         n_feat += batch['img_mask_tgt'].sum().item();#pbar.update(1)
     val_loss = sum(all_gather_list(val_loss));#import ipdb;ipdb.set_trace(context=10)
     n_feat = sum(all_gather_list(n_feat))
     tot_time = time()-st
     val_loss /= n_feat
+    val_loss_classifier /= i
+    val_loss_causal /= i
     val_log = {'loss': val_loss,
                'feat_per_s': n_feat/tot_time}
     LOGGER.info(f"validation finished in {int(tot_time)} seconds, "
-                f"loss: {val_loss:.2f}")
+                f"loss: {val_loss:.2f}, "
+                f"loss_classifier: {val_loss_classifier:.2f}, "
+                f"loss_causal: {val_loss_causal:.2f}")
     return val_log
 
 
@@ -574,5 +589,5 @@ if __name__ == "__main__":
         assert args.max_bb + args.max_txt_len + 2 <= 512
     else:
         assert args.num_bb + args.max_txt_len + 2 <= 512
-
+    
     main(args)

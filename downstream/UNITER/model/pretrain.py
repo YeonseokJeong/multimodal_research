@@ -14,6 +14,7 @@ from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from .layer import GELU, BertOnlyMLMHead
 from .model import UniterModel, UniterPreTrainedModel
 from .ot import optimal_transport_dist
+from .do_calculus import FPNPredictor, CausalPredictor
 
 
 class RegionFeatureRegression(nn.Module):
@@ -66,6 +67,10 @@ class UniterForPretraining(UniterPreTrainedModel):
             config.hidden_size, img_label_dim)
         self.itm_output = nn.Linear(config.hidden_size, 2)
         self.apply(self.init_weights)
+        ### use 'do-calculus' in UNITER pretrain : make method
+        self.predictor = FPNPredictor(config, config.hidden_size)
+        self.causal_predictor = CausalPredictor(config, config.hidden_size)
+        ###
 
     def forward(self, batch, task, compute_loss=True):
         batch = defaultdict(lambda: None, batch)

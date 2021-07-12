@@ -3,6 +3,8 @@
 downstream/UNITER/vcr_data/
 ### Indomain Dataset
 downstream/UNITER/indomain_data/
+### COCO Dataset
+downstream/UNITER/coco
 ### additional feature 
 data3/
 ### VC Feature in UNITER
@@ -39,6 +41,7 @@ downstream/UNITER/output_pretrain3_2200_val_error
 downstream/UNITER/output_pretrain4_7700_train_error
 downstream/UNITER/output_pretrain5_2600_success
 downstream/UNITER/output_success_45000
+downstream/UNITER/output_pretrain_do_calculus/
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
 downstream/UNITER/finetune_output

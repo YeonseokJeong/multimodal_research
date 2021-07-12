@@ -5,10 +5,10 @@ import os
 
 
 class DatasetCatalog(object):
-    DATA_DIR = "./downstream/UNITER/vcr_data/"
+    DATA_DIR = "./downstream/UNITER/"
     DATASETS = {
         "vcr": {
-            "img_dir": "vcr_image/vcr1images",
+            "img_dir": "vcr_data/vcr_image/vcr1images",
             "ann_file": ""
         },
         "Openimages_train": {
