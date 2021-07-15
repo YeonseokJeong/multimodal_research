@@ -70,6 +70,7 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
                                       attn_masks, gather_index,
                                       output_all_encoded_layers=False,
                                       txt_type_ids=txt_type_ids)
+        '''
         ### compute confounder dictionary 2 : extract soft label
         img_soft_label = batch['img_soft_label']
         img_gt_soft_label = batch['img_gt_soft_label']
@@ -88,7 +89,7 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
                 self.prior[label] += 1
                 self.conf_dict[label] += img_set[gt_idx+1+nongt_idx].cpu().numpy()
         ###
-
+        '''
         pooled_output = self.uniter.pooler(sequence_output)
         rank_scores = self.vcr_output(pooled_output)
 
