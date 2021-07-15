@@ -26,7 +26,8 @@ from data import (TokenBucketSampler,
                   VcrTxtTokLmdb, ImageLmdbGroup, ConcatDatasetWithLens,
                   MlmDatasetForVCR, mlm_collate_for_vcr,
                   MrfrDatasetForVCR, mrfr_collate_for_vcr,
-                  MrcDatasetForVCR, mrc_collate_for_vcr)
+                  MrcDatasetForVCR, mrc_collate_for_vcr,
+                  DcDatasetForVCR, dc_collate_for_vcr)
 
 from model.pretrain_vcr import UniterForPretrainingForVCR
 from optim import get_lr_sched
@@ -87,6 +88,16 @@ def build_mrc_dataset(txt_db, img_db_gt, img_db, is_train, opts):
         dataset = MrcDatasetForVCR(opts.mrm_prob, txt_db, img_db_gt, img_db)
 
     return dataset, mrc_collate_for_vcr
+
+def build_dc_dataset(txt_db, img_db_gt, img_db, is_train, opts):
+    if is_train:
+        datasets = [DcDatasetForVCR(opts.mrm_prob, t, i_gt, i)
+                    for t, i_gt, i in zip(txt_db, img_db_gt, img_db)]
+        dataset = ConcatDatasetWithLens(datasets)
+    else:
+        dataset = DcDatasetForVCR(opts.mrm_prob, txt_db, img_db_gt, img_db)
+
+    return dataset, dc_collate_for_vcr
 
 
 def load_img_feat(db_list, all_img_dbs, opts):
@@ -159,6 +170,9 @@ def create_dataloaders(datasets, is_train, opts, all_img_dbs=None):
                         txt_db, img_db_gt, img_db, is_train, opts)
                 elif task.startswith('mrc'):
                     dataset = build_mrc_dataset(
+                        txt_db, img_db_gt, img_db, is_train, opts)
+                elif task.startswith('dc'):
+                    dataset = build_dc_dataset(
                         txt_db, img_db_gt, img_db, is_train, opts)
                 else:
                     raise ValueError(f'Undefined task {task}')
@@ -273,18 +287,13 @@ def main(opts):
         n_examples[name] += batch['input_ids'].size(0)
         n_in_units[name] += (batch['attn_masks'] == 1).sum().item()
         task = name.split('_')[0]
-        loss, loss_classifier, loss_causal = model(batch, task=task, compute_loss=True)
-        ### use 'do-calculus' in UNITER pretrain : calculate total loss
-        # loss, loss_classifier, loss_causal = loss
-        ###
+        loss = model(batch, task=task, compute_loss=True)
+
         if torch.isinf(loss).any():
             loss = torch.zeros_like(loss)
         n_loss_units[name] += loss.size(0)
         loss = loss.mean()  # loss is not normalized in model
         
-        ### use 'do-calculus' in UNITER pretrain : calculate total loss
-        loss = loss + loss_classifier + loss_causal
-        ###
 
         # backward pass
         delay_unscale = (step+1) % opts.gradient_accumulation_steps != 0
@@ -369,11 +378,19 @@ def validate(model, val_dataloaders):
             val_log = validate_mrfr(model, loader)
         elif task.startswith('mrc'):
             val_log = validate_mrc(model, loader, task)
+        elif task.startswith('dc'):
+            try:
+                val_log = validate_dc(model, loader)
+            except:
+                pass
         else:
             raise ValueError(f'Undefined task {task}')
-        val_log = {f'{task}_{k}': v for k, v in val_log.items()}
-        TB_LOGGER.log_scaler_dict(
-            {f'valid_{task}/{k}': v for k, v in val_log.items()})
+        try:
+            val_log = {f'{task}_{k}': v for k, v in val_log.items()}
+            TB_LOGGER.log_scaler_dict(
+                {f'valid_{task}/{k}': v for k, v in val_log.items()})
+        except:
+            pass
     model.train()
 
 
@@ -417,8 +434,8 @@ def accuracy_count(out, labels):
 def validate_mrfr(model, val_loader):
     LOGGER.info("start running MRFR validation...")
     val_loss = 0
-    val_loss_classifier = 0
-    val_loss_causal = 0
+    # val_loss_classifier = 0
+    # val_loss_causal = 0
     n_feat = 0;#pbar = tqdm(total=2000)
     st = time();#import ipdb;ipdb.set_trace(context=10)
     for i, batch in enumerate(val_loader):
@@ -427,27 +444,25 @@ def validate_mrfr(model, val_loader):
           if batch['vc_feat_targets'][vc].sum() < -1:
             import ipdb;ipdb.set_trace(context=10)
         '''
-        loss, loss_classifier, loss_causal = model(batch, task='mrfr', compute_loss=True)
+        loss = model(batch, task='mrfr', compute_loss=True)
         if torch.isinf(loss).any():
             loss = torch.zeros_like(loss)
         #if torch.isinf(loss.sum()).any():
         #    import ipdb;ipdb.set_trace(context=10)
         val_loss += loss.sum().item() / IMG_DIM
-        val_loss_classifier += loss_classifier
-        val_loss_causal += loss_causal
+        # val_loss_classifier += loss_classifier
+        # val_loss_causal += loss_causal
         n_feat += batch['img_mask_tgt'].sum().item();#pbar.update(1)
     val_loss = sum(all_gather_list(val_loss));#import ipdb;ipdb.set_trace(context=10)
     n_feat = sum(all_gather_list(n_feat))
     tot_time = time()-st
     val_loss /= n_feat
-    val_loss_classifier /= i
-    val_loss_causal /= i
+    # val_loss_classifier /= i
+    # val_loss_causal /= i
     val_log = {'loss': val_loss,
                'feat_per_s': n_feat/tot_time}
     LOGGER.info(f"validation finished in {int(tot_time)} seconds, "
-                f"loss: {val_loss:.2f}, "
-                f"loss_classifier: {val_loss_classifier:.2f}, "
-                f"loss_causal: {val_loss_causal:.2f}")
+                f"loss: {val_loss:.2f}")
     return val_log
 
 
@@ -477,6 +492,41 @@ def validate_mrc(model, val_loader, task):
                 ignore_index=0, reduction='sum')
             tot_score += compute_accuracy_for_soft_targets(
                 prediction_soft_label[:, 1:], label_targets[:, 1:])
+        val_loss += loss.item()
+        n_feat += batch['img_mask_tgt'].sum().item()
+    val_loss = sum(all_gather_list(val_loss))
+    tot_score = sum(all_gather_list(tot_score))
+    n_feat = sum(all_gather_list(n_feat))
+    tot_time = time()-st
+    val_loss /= n_feat
+    val_acc = tot_score / n_feat
+    val_log = {'loss': val_loss,
+               'acc': val_acc,
+               'feat_per_s': n_feat/tot_time}
+    LOGGER.info(f"validation finished in {int(tot_time)} seconds, "
+                f"score: {val_acc*100:.2f}")
+    return val_log
+
+@torch.no_grad()
+def validate_dc(model, val_loader):
+    LOGGER.info("start running MRC validation...")
+    val_loss = 0
+    n_feat = 0
+    st = time()
+    tot_score = 0
+    for i, batch in enumerate(val_loader):
+        prediction_soft_label = model(
+            batch, task=task, compute_loss=False)
+        
+        # background class should not be the target
+        label_targets = batch['label_targets']
+        cls_label_targets = label_targets[:, 1:].max(dim=-1)[1] + 1
+        loss = F.cross_entropy(
+            prediction_soft_label, cls_label_targets,
+            ignore_index=0, reduction='sum')
+        tot_score += compute_accuracy_for_soft_targets(
+            prediction_soft_label[:, 1:], label_targets[:, 1:])
+
         val_loss += loss.item()
         n_feat += batch['img_mask_tgt'].sum().item()
     val_loss = sum(all_gather_list(val_loss))

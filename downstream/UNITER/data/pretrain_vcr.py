@@ -340,6 +340,41 @@ def mrfr_collate_for_vcr(inputs):
     ###    
     return batch
 
+def vcr_mrfr_pretrain_collate(
+        input_ids, txt_type_ids, img_feats,
+        img_pos_feats, attn_masks, vc_feats):
+
+    # text batches
+    txt_lens = [i.size(0) for i in input_ids]
+    input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
+    txt_type_ids = pad_sequence(txt_type_ids, batch_first=True,
+                                padding_value=0)
+    position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long
+                                ).unsqueeze(0)
+
+    # image batches
+    num_bbs = [f.size(0) for f in img_feats]
+    img_feat = pad_tensors(img_feats, num_bbs)
+    img_pos_feat = pad_tensors(img_pos_feats, num_bbs)
+    vc_feat = pad_tensors(vc_feats, num_bbs)
+
+    attn_masks = pad_sequence(attn_masks, batch_first=True, padding_value=0)
+
+    bs, max_tl = input_ids.size()
+    out_size = attn_masks.size(1)
+    gather_index = get_gather_index(txt_lens, num_bbs, bs, max_tl, out_size)
+
+    batch = {'input_ids': input_ids,
+             'txt_type_ids': txt_type_ids,
+             'position_ids': position_ids,
+             'img_feat': img_feat,
+             'img_pos_feat': img_pos_feat,
+             'attn_masks': attn_masks,
+             'gather_index': gather_index,
+             'vc_feat': vc_feat,
+             'txt_lens': txt_lens}
+    return batch
+
 
 class MrcDatasetForVCR(VcrPretrainDataset):
     def __init__(self, mask_prob, *args, **kwargs):
@@ -413,7 +448,6 @@ def mrc_collate_for_vcr(inputs):
         input_ids, txt_type_ids, img_feats,
         img_pos_feats, attn_masks)
 
-
     # mask features
     img_soft_label = pad_tensors(img_soft_labels, num_bbs)
     img_masks = pad_sequence(img_masks, batch_first=True, padding_value=0)
@@ -431,37 +465,91 @@ def mrc_collate_for_vcr(inputs):
     ###
     return batch
 
-def vcr_mrfr_pretrain_collate(
-        input_ids, txt_type_ids, img_feats,
-        img_pos_feats, attn_masks, vc_feats):
+class DcDatasetForVCR(VcrPretrainDataset):
+    def __init__(self, mask_prob, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mask_prob = mask_prob
 
-    # text batches
-    txt_lens = [i.size(0) for i in input_ids]
-    input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
-    txt_type_ids = pad_sequence(txt_type_ids, batch_first=True,
-                                padding_value=0)
-    position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long
-                                ).unsqueeze(0)
+    def _get_img_feat_for_db(self, img_db, fname):
+        img_dump = img_db.get_dump(fname)
+        img_feat = torch.tensor(img_dump['features'])
+        bb = torch.tensor(img_dump['norm_bb'])
+        img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
+        img_soft_label = torch.tensor(img_dump['soft_labels'])
+        return img_feat, img_bb, img_soft_label
 
-    # image batches
+    def _get_img_feat(self, fname_gt, fname):
+        if self.img_db and self.img_db_gt:
+            (img_feat_gt, img_bb_gt,
+             img_soft_label_gt) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+
+            img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
+            img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
+            img_soft_label = torch.cat(
+                [img_soft_label_gt, img_soft_label], dim=0)
+        elif self.img_db:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+        else:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+        num_bb = img_feat.size(0)
+        return img_feat, img_bb, img_soft_label, num_bb
+
+    def __getitem__(self, i):
+        example = super().__getitem__(i)
+
+        # text input
+        input_ids, txt_type_ids = self._get_input_ids(example, mask=False)
+        input_ids, txt_type_ids = self.combine_txt_inputs(
+            input_ids, txt_type_ids)
+
+        # image input features
+        img_feat, img_pos_feat, img_soft_labels, num_bb = self._get_img_feat(
+            example['img_fname'][0], example['img_fname'][1])
+        img_mask = _get_img_mask(self.mask_prob, num_bb)
+        img_mask_tgt = _get_img_tgt_mask(img_mask, len(input_ids))
+
+        attn_masks = torch.ones(len(input_ids) + num_bb, dtype=torch.long)
+
+        return (input_ids, txt_type_ids, img_feat, img_pos_feat,
+                img_soft_labels, attn_masks, img_mask, img_mask_tgt)
+
+
+def dc_collate_for_vcr(inputs):
+    (input_ids, txt_type_ids, img_feats, img_pos_feats, img_soft_labels,
+     attn_masks, img_masks, img_mask_tgts) = map(list, unzip(inputs))
     num_bbs = [f.size(0) for f in img_feats]
-    img_feat = pad_tensors(img_feats, num_bbs)
-    img_pos_feat = pad_tensors(img_pos_feats, num_bbs)
-    vc_feat = pad_tensors(vc_feats, num_bbs)
 
-    attn_masks = pad_sequence(attn_masks, batch_first=True, padding_value=0)
+    ### use 'do-calculus' in UNITER pretrain : prepare method to extract label
+    # img_soft_label = pad_tensors(img_soft_labels, num_bbs)
+    txt_lens = [i.size(0) for i in input_ids]
+    ### 
 
-    bs, max_tl = input_ids.size()
-    out_size = attn_masks.size(1)
-    gather_index = get_gather_index(txt_lens, num_bbs, bs, max_tl, out_size)
+    batch = vcr_pretrain_collate(
+        input_ids, txt_type_ids, img_feats,
+        img_pos_feats, attn_masks)
 
-    batch = {'input_ids': input_ids,
-             'txt_type_ids': txt_type_ids,
-             'position_ids': position_ids,
-             'img_feat': img_feat,
-             'img_pos_feat': img_pos_feat,
-             'attn_masks': attn_masks,
-             'gather_index': gather_index,
-             'vc_feat': vc_feat,
-             'txt_lens': txt_lens}
+    # mask features
+    img_soft_label = pad_tensors(img_soft_labels, num_bbs)
+    img_masks = pad_sequence(img_masks, batch_first=True, padding_value=0)
+    label_targets = _get_targets(img_masks, img_soft_label)
+    img_mask_tgt = pad_sequence(
+        img_mask_tgts, batch_first=True, padding_value=0)
+    batch['img_feat'] = _mask_img_feat(batch['img_feat'], img_masks)
+    batch['img_masks'] = img_masks
+    batch['label_targets'] = label_targets
+    batch['img_mask_tgt'] = img_mask_tgt
+    ### use 'do-calculus' in UNITER pretrain : prepare method to extract label
+    batch['img_soft_labels'] = img_soft_labels
+    batch['txt_lens'] = txt_lens
+    batch['num_bbs'] = num_bbs
+    ###
     return batch

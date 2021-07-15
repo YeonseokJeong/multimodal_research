@@ -38,10 +38,12 @@
             ],
             "tasks": [
                 "mlm",
+                "dc",
                 "mrfr",
                 "mrckl"
             ],
             "mix_ratio": [
+                1,
                 2,
                 1,
                 1
@@ -59,6 +61,7 @@
             ],
             "tasks": [
                 "mlm",
+                "dc",
                 "mrfr",
                 "mrckl"
             ]

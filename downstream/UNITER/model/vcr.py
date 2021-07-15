@@ -105,7 +105,7 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
     def save_conf_prior(self, opts):
         #self.conf_dict = self.conf_dict / prior[: np.newaxis]
         #self.conf_dict_gt = self.conf_dict_gt / prior_gt[: np.newaxis]
-        os.makedirs('./conf_and_prior', exist_os=True)
+        # os.makedirs('./conf_and_prior', exist_ok=True)
         np.save(f'./conf_and_prior/{opts.split}_dic_vcr_nongt_uniter.npy', self.conf_dict)
         np.save(f'./conf_and_prior/{opts.split}_dic_vcr_gt_uniter.npy', self.conf_dict_gt)
         #self.prior = self.prior / np.sum(self.prior)

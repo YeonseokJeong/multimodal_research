@@ -78,21 +78,22 @@ class CausalPredictor(nn.Module):
 
         self.feature_size = representation_size
         self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
-        self.prior = torch.tensor(np.load('./conf_and_prior/stat_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+        self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
 
-    def forward(self, x, proposals):
-        device = x.get_device()
+    def forward(self, y, proposals):
+        device = y.get_device()
         dic_z = self.dic.to(device)
         prior = self.prior.to(device)
 
         box_size_list = [proposal for proposal in proposals]
-        feature_split = x.split(box_size_list)
-        xzs = [self.z_dic(feature_pre_obj, dic_z, prior) for feature_pre_obj in feature_split]
+        feature_split = y.split(box_size_list)
+        z = self.z_dic(feature_split[0], dic_z, prior)
+        #z = [self.z_dic(feature_pre_obj, dic_z, prior) for feature_pre_obj in feature_split]
 
-        causal_logits_list = [self.causal_score(xz) for xz in xzs]
+        # causal_logits_list = [self.causal_score(yz) for yz in yzs]
 
 
-        return causal_logits_list
+        return z
 
 
     def z_dic(self, y, dic_z, prior):
@@ -106,12 +107,13 @@ class CausalPredictor(nn.Module):
         attention = F.softmax(attention, 1)
         z_hat = attention.unsqueeze(2) * dic_z.unsqueeze(0)
         z = torch.matmul(prior.unsqueeze(0), z_hat).squeeze(1)
-        xz = torch.cat((y.unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*y.size(1))
+        # yz = z.unsqueeze(0).repeat(length, 1, 1)#.view(-1, y.size(1))
+        # yz = torch.cat((self.Wx(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*y.size(1))
 
         # detect if encounter nan
-        if torch.isnan(xz).sum():
-            print(xz)
-        return xz
+        if torch.isnan(z).sum():
+            print(z)
+        return z
 
 
 # 3. calculate loss
@@ -478,7 +480,7 @@ class FastRCNNLossComputation(object):
         self._proposals = proposals
         return proposals
 
-    def __call__(self, class_logits, causal_logits_list, proposals, img_soft_labels):
+    def __call__(self, causal_logits_list, proposals, img_soft_labels, compute_loss):
         """
         Computes the loss for Faster R-CNN.
         This requires that the subsample method has been called beforehand.
@@ -490,32 +492,44 @@ class FastRCNNLossComputation(object):
             box_loss (Tensor)
         """
 
+
+
+        # self predictor loss
+        '''
         class_logits = cat(class_logits, dim=0)
         device = class_logits.device
 
-        # labels = [proposal.get_field("labels").to(dtype=torch.int64) for proposal in proposals]
-        # labels = [torch.zeros_like(img_soft_label, dtype=torch.long).scatter_(1, img_soft_label.argmax(dim=1).unsqueeze(1), 1) for img_soft_label in img_soft_labels]
+        classification_loss = F.cross_entropy(class_logits, labels_self) # object별 평균 loss
+        '''
+        # context predictor loss
         labels = [img_soft_label.argmax(dim=1) for img_soft_label in img_soft_labels]
         labels_self = cat(labels, dim=0)
+        device = labels_self.device
 
-        # self predictor loss
-        classification_loss = F.cross_entropy(class_logits, labels_self) # object별 평균 loss
-        
-        # context predictor loss
         causal_loss = 0.
         object_counter = 0
+        prediction_list =[]
+        total_loss = []
+        i = 0
         for causal_logit, label in zip(causal_logits_list, labels):
             mask_label = label.unsqueeze(0).repeat(label.size(0), 1)
             mask = 1 - torch.eye(mask_label.size(0)).half().to(device)
-            loss_causal = F.cross_entropy(causal_logit[0], mask_label.view(-1), reduction='none')
-
+            loss_causal = F.cross_entropy(causal_logit, mask_label.view(-1), reduction='none')
+            
+            prediction_soft_label = F.log_softmax(causal_logit, dim=-1)
+            prediction_list.append(prediction_soft_label)
 
             loss_causal = loss_causal * mask.view(-1)
-            causal_loss += torch.mean(loss_causal)*len(label)
+            if i==0:
+                total_loss = loss_causal
+                i += 1
+            else:
+                total_loss = torch.cat([total_loss, loss_causal])
+            # causal_loss += torch.mean(loss_causal)*len(label)
             object_counter += len(label)
-        
-        causal_loss_mean = causal_loss/object_counter
-        return classification_loss, causal_loss_mean
+        prediction = torch.cat(prediction_list)
+        # causal_loss_mean = causal_loss/object_counter
+        return total_loss, prediction_list
 
 def cat(tensors, dim=0):
     """

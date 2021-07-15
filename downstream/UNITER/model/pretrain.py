@@ -67,9 +67,15 @@ class UniterForPretraining(UniterPreTrainedModel):
             config.hidden_size, img_label_dim)
         self.itm_output = nn.Linear(config.hidden_size, 2)
         self.apply(self.init_weights)
-        ### use 'do-calculus' in UNITER pretrain : make method
-        self.predictor = FPNPredictor(config, config.hidden_size)
-        self.causal_predictor = CausalPredictor(config, config.hidden_size)
+        ### use 'do-calculus' in UNITER pretrain 2: make method 
+        self.predictor = FPNPredictor(config, img_dim) # use 'do-calculus' in UNITER pretrain 2 
+        self.causal_predictor = CausalPredictor(config, img_dim) # use 'do-calculus' in UNITER pretrain 2
+        self.Wx = nn.Linear(config.hidden_size, config.hidden_size)
+        nn.init.normal_(self.Wx.weight, std=0.02)
+        nn.init.constant_(self.Wx.bias, 0)
+        self.causal_score = nn.Linear(2*config.hidden_size, 1601)
+        nn.init.normal_(self.causal_score.weight, std=0.01)
+        nn.init.constant_(self.causal_score.bias, 0)
         ###
 
     def forward(self, batch, task, compute_loss=True):
