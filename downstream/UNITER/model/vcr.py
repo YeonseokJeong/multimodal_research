@@ -29,12 +29,14 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
             nn.Linear(config.hidden_size*2, 2)
         )
         self.apply(self.init_weights)
+        '''
         ### compute confounder dictionary : prepare initialized confounder dictionary & prior
         self.conf_dict = np.zeros((1601, img_dim))
         self.conf_dict_gt = np.zeros((1601, img_dim))
         self.prior = np.zeros(1601)
         self.prior_gt = np.zeros(1601)
         ###
+        '''
 
     def init_type_embedding(self):
         new_emb = nn.Embedding(4, self.uniter.config.hidden_size)
@@ -102,7 +104,7 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
         else:
             rank_scores = rank_scores[:, 1:]
             return rank_scores
-    
+    '''
     def save_conf_prior(self, opts):
         #self.conf_dict = self.conf_dict / prior[: np.newaxis]
         #self.conf_dict_gt = self.conf_dict_gt / prior_gt[: np.newaxis]
@@ -113,3 +115,4 @@ class UniterForVisualCommonsenseReasoning(UniterPreTrainedModel):
         #self.prior_gt = self.prior_gt / np.sum(self.prior_gt)
         np.save(f'./conf_and_prior/{opts.split}_stat_prob_vcr_nongt_uniter.npy', self.prior)
         np.save(f'./conf_and_prior/{opts.split}_stat_prob_vcr_gt_uniter.npy', self.prior_gt)
+    '''
