@@ -354,3 +354,306 @@ def vcr_eval_collate(inputs):
             'img_gt_soft_label': img_gt_soft_label,
             'img_tot_soft_label' : img_tot_soft_label,
             'txt_lens': txt_lens} ### compute confounder dictionary : extract soft label
+
+class VcrConfPriorDataset(DetectFeatTxtTokDataset):
+    def __init__(self, split, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.split = split
+        self.img_db_gt = None
+        #assert self.task == "qa,qar",\
+        #    "loading evaluation dataset with two tasks together"
+
+    def _get_input_ids(self, txt_dump):
+        # text input
+        input_ids_for_choices = []
+        type_ids_for_choices = []
+        input_ids_q = txt_dump['input_ids']
+        type_ids_q = [0]*len(input_ids_q)
+        input_ids_as = txt_dump['input_ids_as']
+        input_ids_rs = txt_dump['input_ids_rs']
+        for index, input_ids_a in enumerate(input_ids_as):
+            curr_input_ids_qa = [self.txt_db.cls_] + copy.deepcopy(input_ids_q) +\
+                [self.txt_db.sep] + input_ids_a + [self.txt_db.sep]
+            curr_type_ids_qa = [0] + type_ids_q + [2]*(
+                len(input_ids_a)+2)
+            input_ids_for_choices.append(curr_input_ids_qa)
+            type_ids_for_choices.append(curr_type_ids_qa)
+        for index, input_ids_a in enumerate(input_ids_as):
+            curr_input_ids_qa = [self.txt_db.cls_] + copy.deepcopy(input_ids_q) +\
+                [self.txt_db.sep] + input_ids_a + [self.txt_db.sep]
+            curr_type_ids_qa = [0] + type_ids_q + [2]*(
+                len(input_ids_a)+1)
+            if (self.split == "val" and index == txt_dump["qa_target"]) or\
+                    self.split == "test":
+                for input_ids_r in input_ids_rs:
+                    curr_input_ids_qar = copy.deepcopy(curr_input_ids_qa) +\
+                        input_ids_r + [self.txt_db.sep]
+                    curr_type_ids_qar = copy.deepcopy(curr_type_ids_qa) +\
+                        [3]*(len(input_ids_r)+2)
+                    input_ids_for_choices.append(curr_input_ids_qar)
+                    type_ids_for_choices.append(curr_type_ids_qar)
+        return input_ids_for_choices, type_ids_for_choices
+    
+    ### calculate confounder dictionary & prior 2 : prepare method to extract label
+    def _get_img_feat_for_db(self, img_db, fname):
+        img_dump = img_db.get_dump(fname)
+        img_feat = torch.tensor(img_dump['features'])
+        bb = torch.tensor(img_dump['norm_bb'])
+        img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
+        img_soft_label = torch.tensor(img_dump['soft_labels'])
+        return img_feat, img_bb, img_soft_label
+
+    def _get_img_feat(self, fname_gt, fname):
+        if self.img_db and self.img_db_gt:
+            (img_feat_gt, img_bb_gt,
+             img_soft_label_gt) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+
+            img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
+            img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
+            img_soft_label = torch.cat(
+                [img_soft_label_gt, img_soft_label], dim=0)
+        elif self.img_db:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+        else:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+        num_bb = img_feat.size(0)
+        return img_feat, img_bb, img_soft_label, num_bb
+    ###
+    
+    def __getitem__(self, i):
+        """
+        Return:
+        - input_ids    : (L, ), i.e., [cls, wd, wd, ..., sep, 0, 0], 0s padded
+        - img_feat     : (num_bb, d)
+        - img_pos_feat : (num_bb, 7)
+        - attn_masks   : (L + num_bb, ), ie., [1, 1, ..., 0, 0, 1, 1]
+        - txt_labels   : (L, ), [-1, -1, wid, -1, -1, -1]
+        0's padded so that (L + num_bb) % 8 == 0
+        """
+        example = super().__getitem__(i)
+
+        # text input
+        input_ids = torch.tensor([self.txt_db.cls_]+ example['input_ids']+[self.txt_db.sep])
+
+        # img input
+        img_feat, img_pos_feat, img_soft_label, num_bb = self._get_img_feat(
+            None, example['img_fname'])
+
+        attn_masks = torch.ones(len(input_ids) + num_bb, dtype=torch.long)
+
+        return input_ids, img_feat, img_pos_feat, attn_masks, img_soft_label
+
+
+def vcr_conf_prior_collate(inputs):
+    (input_ids, img_feats, img_pos_feats, attn_masks, img_soft_labels
+     ) = map(list, unzip(inputs))
+    # import ipdb;ipdb.set_trace(context=10)
+
+    txt_lens = [i.size(0) for i in input_ids]
+    input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
+    
+    position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long
+                                ).unsqueeze(0)
+
+    # image batches
+    num_bbs = [f.size(0) for f in img_feats]
+    img_feat = pad_tensors(img_feats, num_bbs)
+    img_pos_feat = pad_tensors(img_pos_feats, num_bbs)
+    #img_soft_label = pad_tensors(img_soft_labels, num_bbs)
+
+    attn_masks = pad_sequence(attn_masks, batch_first=True, padding_value=0)
+
+    bs, max_tl = input_ids.size()
+    out_size = attn_masks.size(1)
+    gather_index = get_gather_index(txt_lens, num_bbs, bs, max_tl, out_size)
+    
+    '''
+    qa_targets = torch.stack(
+        [t for _, _, t, _ in inputs], dim=0)
+    qar_targets = torch.stack(
+        [t for _, _, _, t in inputs], dim=0)
+    qids = [id_ for _, id_, _, _ in inputs]
+    '''
+    ### compute confounder dictionary : extract soft label
+    #img_tot_soft_label = [torch.Tensor(np.concatenate((img_soft_label[i], img_gt_soft_label[i]), axis=0)) for i in range(len(img_soft_label))]
+    #img_tot_soft_label = pad_tensors(img_tot_soft_label, num_bbs)
+    #img_soft_label = torch.Tensor(img_soft_label)
+    #img_gt_soft_label = torch.Tensor(img_gt_soft_label)
+    ### 
+
+    return {'input_ids': input_ids,
+            'position_ids': position_ids,
+            'img_feat': img_feat,
+            'img_pos_feat': img_pos_feat,
+            'attn_masks': attn_masks,
+            'gather_index': gather_index,
+            'img_soft_label': img_soft_labels,
+            'txt_lens': txt_lens} ### compute confounder dictionary : extract soft label
+
+'''
+class VcrConfPriorDataset(DetectFeatTxtTokDataset):
+    def __init__(self, split, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.split = split
+        self.img_db_gt = None
+        #assert self.task == "qa,qar",\
+        #    "loading evaluation dataset with two tasks together"
+
+    def _get_input_ids(self, txt_dump):
+        # text input
+        input_ids_for_choices = []
+        type_ids_for_choices = []
+        input_ids_q = txt_dump['input_ids']
+        type_ids_q = [0]*len(input_ids_q)
+        input_ids_as = txt_dump['input_ids_as']
+        input_ids_rs = txt_dump['input_ids_rs']
+        for index, input_ids_a in enumerate(input_ids_as):
+            curr_input_ids_qa = [self.txt_db.cls_] + copy.deepcopy(input_ids_q) +\
+                [self.txt_db.sep] + input_ids_a + [self.txt_db.sep]
+            curr_type_ids_qa = [0] + type_ids_q + [2]*(
+                len(input_ids_a)+2)
+            input_ids_for_choices.append(curr_input_ids_qa)
+            type_ids_for_choices.append(curr_type_ids_qa)
+        for index, input_ids_a in enumerate(input_ids_as):
+            curr_input_ids_qa = [self.txt_db.cls_] + copy.deepcopy(input_ids_q) +\
+                [self.txt_db.sep] + input_ids_a + [self.txt_db.sep]
+            curr_type_ids_qa = [0] + type_ids_q + [2]*(
+                len(input_ids_a)+1)
+            if (self.split == "val" and index == txt_dump["qa_target"]) or\
+                    self.split == "test":
+                for input_ids_r in input_ids_rs:
+                    curr_input_ids_qar = copy.deepcopy(curr_input_ids_qa) +\
+                        input_ids_r + [self.txt_db.sep]
+                    curr_type_ids_qar = copy.deepcopy(curr_type_ids_qa) +\
+                        [3]*(len(input_ids_r)+2)
+                    input_ids_for_choices.append(curr_input_ids_qar)
+                    type_ids_for_choices.append(curr_type_ids_qar)
+        return input_ids_for_choices, type_ids_for_choices
+    
+    ### calculate confounder dictionary & prior 2 : prepare method to extract label
+    def _get_img_feat_for_db(self, img_db, fname):
+        img_dump = img_db.get_dump(fname)
+        img_feat = torch.tensor(img_dump['features'])
+        bb = torch.tensor(img_dump['norm_bb'])
+        img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
+        img_soft_label = torch.tensor(img_dump['soft_labels'])
+        return img_feat, img_bb, img_soft_label
+
+    def _get_img_feat(self, fname_gt, fname):
+        if self.img_db and self.img_db_gt:
+            (img_feat_gt, img_bb_gt,
+             img_soft_label_gt) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+
+            img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
+            img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
+            img_soft_label = torch.cat(
+                [img_soft_label_gt, img_soft_label], dim=0)
+        elif self.img_db:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+        else:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+        num_bb = img_feat.size(0)
+        return img_feat, img_bb, img_soft_label, num_bb
+    ###
+    
+    def __getitem__(self, i):
+        qid = self.ids[i]
+        example = super().__getitem__(i)
+        img_feat, img_pos_feat, img_tot_soft_label, num_bb = self._get_img_feat(
+            example['img_fname'][0], example['img_fname'])
+        ### compute confounder dictionary : extract soft label
+        img_soft_label = self.img_db.get_dump(example['img_fname'])['soft_labels']
+        # img_gt_soft_label = self.img_db_gt.get_dump(example['img_fname'][0])['soft_labels']
+        ###
+        input_ids_for_choices, type_ids_for_choices = self._get_input_ids(
+            example)
+        qa_target = torch.tensor([int(example["qa_target"])])
+        qar_target = torch.tensor([int(example["qar_target"])])
+
+        outs = []
+        for index, input_ids in enumerate(input_ids_for_choices):
+
+            attn_masks = torch.ones(
+                len(input_ids) + num_bb, dtype=torch.long)
+
+            input_ids = torch.tensor(input_ids)
+            txt_type_ids = torch.tensor(
+                type_ids_for_choices[index])
+
+            outs.append(
+                (input_ids, txt_type_ids,
+                 img_feat, img_pos_feat,
+                 attn_masks, img_soft_label, img_tot_soft_label)) ### compute confounder dictionary : extract soft label
+
+        return tuple(outs), qid, qa_target, qar_target
+
+
+def vcr_conf_prior_collate(inputs):
+    (input_ids, txt_type_ids, img_feats,
+     img_pos_feats, attn_masks, img_soft_label, img_tot_soft_label) = map(
+         list, unzip(concat(outs for outs, _, _, _ in inputs)))
+    # import ipdb;ipdb.set_trace(context=10)
+
+    txt_lens = [i.size(0) for i in input_ids]
+    input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
+    txt_type_ids = pad_sequence(
+        txt_type_ids, batch_first=True, padding_value=0)
+    position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long
+                                ).unsqueeze(0)
+
+    # image batches
+    num_bbs = [f.size(0) for f in img_feats]
+    img_feat = pad_tensors(img_feats, num_bbs)
+    img_pos_feat = pad_tensors(img_pos_feats, num_bbs)
+
+    attn_masks = pad_sequence(attn_masks, batch_first=True, padding_value=0)
+
+    bs, max_tl = input_ids.size()
+    out_size = attn_masks.size(1)
+    gather_index = get_gather_index(txt_lens, num_bbs, bs, max_tl, out_size)
+    
+    qa_targets = torch.stack(
+        [t for _, _, t, _ in inputs], dim=0)
+    qar_targets = torch.stack(
+        [t for _, _, _, t in inputs], dim=0)
+    qids = [id_ for _, id_, _, _ in inputs]
+    
+    ### compute confounder dictionary : extract soft label
+    #img_tot_soft_label = [torch.Tensor(np.concatenate((img_soft_label[i], img_gt_soft_label[i]), axis=0)) for i in range(len(img_soft_label))]
+    #img_tot_soft_label = pad_tensors(img_tot_soft_label, num_bbs)
+    #img_soft_label = torch.Tensor(img_soft_label)
+    #img_gt_soft_label = torch.Tensor(img_gt_soft_label)
+    ### 
+
+    return {'qids': qids,
+            'input_ids': input_ids,
+            'txt_type_ids': txt_type_ids,
+            'position_ids': position_ids,
+            'img_feat': img_feat,
+            'img_pos_feat': img_pos_feat,
+            'attn_masks': attn_masks,
+            'gather_index': gather_index,
+            'qa_targets': qa_targets,
+            'qar_targets': qar_targets,
+            'img_soft_label': img_soft_label,
+            'img_tot_soft_label' : img_tot_soft_label,
+            'txt_lens': txt_lens} ### compute confounder dictionary : extract soft label
+'''

@@ -20,9 +20,9 @@ from horovod import torch as hvd
 import numpy as np
 from torch.utils.data.distributed import DistributedSampler
 from data import (PrefetchLoader,
-                  DetectFeatLmdb, VcrTxtTokLmdb, VcrEvalDataset,
-                  vcr_eval_collate)
-from model.vcr import UniterForVisualCommonsenseReasoning
+                  DetectFeatLmdb, VcrTxtTokLmdb, VcrConfPriorDataset, TxtTokLmdb,
+                  vcr_conf_prior_collate)
+from model.make_conf_prior import UniterForConfPriorForVCR
 from utils.logger import LOGGER
 from utils.distributed import all_gather_list
 from utils.misc import NoOp, Struct
@@ -94,20 +94,24 @@ def main(opts):
                     device, n_gpu, hvd.rank(), opts.fp16))
     if rank != 0:
         LOGGER.disabled = True
-
+    
     hps_file = f'{opts.output_dir}/log/hps.json'
     model_opts = Struct(json.load(open(hps_file)))
-
-    assert opts.split in opts.img_db and opts.split in opts.txt_db
+    ### make confounder and prior : delete assert, use TxtTokLmdb
+    #assert opts.split in opts.img_db and opts.split in opts.txt_db
     # load DBs and image dirs
     eval_img_db, eval_img_db_gt = load_img_feat(opts.img_db, model_opts)
-    eval_txt_db = VcrTxtTokLmdb(opts.txt_db, -1)
-    eval_dataset = VcrEvalDataset(
-        "test", eval_txt_db, img_db=eval_img_db,
-        img_db_gt=eval_img_db_gt)
+    eval_txt_db = TxtTokLmdb(opts.txt_db, -1)
+    if eval_img_db_gt is None:
+        eval_dataset = VcrConfPriorDataset(
+            "test", eval_txt_db, img_db=eval_img_db)
+    else:
+        eval_dataset = VcrConfPriorDataset(
+            "test", eval_txt_db, img_db=eval_img_db,
+            img_db_gt=eval_img_db_gt)
 
     # Prepare model
-    model = UniterForVisualCommonsenseReasoning.from_pretrained(
+    model = UniterForConfPriorForVCR.from_pretrained(
         f'{opts.output_dir}/log/model.json', state_dict={},
         img_dim=IMG_DIM)
     model.init_type_embedding()
@@ -141,10 +145,11 @@ def main(opts):
                                  num_workers=opts.n_workers,
                                  pin_memory=opts.pin_mem,
                                  shuffle=False,
-                                 collate_fn=vcr_eval_collate)
+                                 collate_fn=vcr_conf_prior_collate)
     eval_dataloader = PrefetchLoader(eval_dataloader)
-
+    #import ipdb;ipdb.set_trace(context=10)
     _, results = evaluate(model, eval_dataloader, opts)
+    '''
     result_dir = f'{opts.output_dir}/results_{opts.split}'
     if not exists(result_dir) and rank == 0:
         os.makedirs(result_dir)
@@ -158,7 +163,7 @@ def main(opts):
             json.dump(all_results, f)
         probs_df = save_for_submission(
             f'{result_dir}/results_{opts.checkpoint}_all.json')
-        probs_df.to_csv(f'{result_dir}/results_{opts.checkpoint}_all.csv')
+        probs_df.to_csv(f'{result_dir}/results_{opts.checkpoint}_all.csv')'''
 
 
 @torch.no_grad()
@@ -175,10 +180,11 @@ def evaluate(model, eval_loader, opts):
     st = time()
     results = {}
     for i, batch in enumerate(eval_loader):
-        qids = batch['qids'];#continue ###
-        qa_targets, qar_targets = batch['qa_targets'], batch['qar_targets']
+        #qids = batch['qids'];#continue ###
+        #qa_targets, qar_targets = batch['qa_targets'], batch['qar_targets']
         scores = model(batch, compute_loss=False)
-        scores = scores.view(len(qids), -1)
+        # scores = scores.view(len(qids), -1)
+        '''
         if torch.max(qa_targets) > -1:
             vcr_qa_loss = F.cross_entropy(
                 scores[:, :4], qa_targets.squeeze(-1), reduction="sum")
@@ -204,11 +210,13 @@ def evaluate(model, eval_loader, opts):
             tot_score += curr_score
         for qid, score in zip(qids, scores):
             results[qid] = score.cpu().tolist()
-        n_ex += len(qids)
+        n_ex += len(qids)'''
         val_pbar.update(1)
+    
     ### compute confounder dictionary : save npy files
-    # model.save_conf_prior(opts)
+    model.save_conf_prior(opts)
     ###
+    '''
     val_qa_loss = sum(all_gather_list(val_qa_loss))### ;return ### 
     val_qar_loss = sum(all_gather_list(val_qar_loss))
     tot_qa_score = sum(all_gather_list(tot_qa_score))
@@ -231,8 +239,8 @@ def evaluate(model, eval_loader, opts):
     LOGGER.info(f"evaluation finished in {int(tot_time)} seconds, "
                 f"score_qa: {val_qa_acc*100:.2f} "
                 f"score_qar: {val_qar_acc*100:.2f} "
-                f"score: {val_acc*100:.2f} ")
-    return val_log, results
+                f"score: {val_acc*100:.2f} ")'''
+    return None, None
 
 
 def compute_accuracies(out_qa, labels_qa, out_qar, labels_qar):

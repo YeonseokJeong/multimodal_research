@@ -66,6 +66,7 @@ downstream/UNITER/bbox_gt.tar
 ### confounder dictionary & prior
 downstream/UNITER/conf_and_prior
 downstream/UNITER/conf_and_prior_version1_uniter
+downstream/UNITER/conf_and_prior_version2_updown/
 
 # files for do-calculus
 dic_coco*
