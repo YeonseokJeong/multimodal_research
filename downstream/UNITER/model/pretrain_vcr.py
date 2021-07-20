@@ -76,7 +76,14 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrc_label_target = batch['label_targets']
-            return self.forward_dc(input_ids, position_ids,
+            '''
+            return self.forward_dc_1(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_dc_2(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
@@ -85,7 +92,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             raise ValueError('invalid task')
     
     ### use 'do-calculus' in UNITER pretrain : make method
-    def do_calculus(self, sequence_output, img_feats, proposals, txt_lens, num_bbs):
+    def do_calculus_1(self, sequence_output, img_feats, proposals, txt_lens, num_bbs):
         """
         Arguments:
         - sequence_output : "img + txt" output
@@ -111,7 +118,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
 
         return image_uniter_outputs, zs
 
-    def do_calculus_loss(self, class_logits_causal_list, proposals, img_soft_labels, compute_loss):
+    def do_calculus_loss_2(self, class_logits_causal_list, proposals, img_soft_labels, compute_loss):
 
         matcher = Matcher(
             0.7, # cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD = 0.7
@@ -250,7 +257,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             return prediction_soft_label
 
     # DC (Do-Calculus)
-    def forward_dc(self, input_ids, position_ids, txt_type_ids,
+    def forward_dc_1(self, input_ids, position_ids, txt_type_ids,
                     img_feat, img_pos_feat,
                     attention_mask, gather_index, img_masks, img_mask_tgt,
                     label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
@@ -289,7 +296,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             i += 1
             assert len(uniter_output) == len(z)
             length = len(uniter_output)
-            yz = torch.cat((self.Wx(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*self.Wx(uniter_output).size(1))
+            yz = torch.cat((self.Wx_1(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*self.Wx(uniter_output).size(1))
             yzs.append(yz)
             causal_logits_list.append(self.causal_score(yz))
         

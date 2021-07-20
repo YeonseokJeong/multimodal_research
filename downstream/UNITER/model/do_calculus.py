@@ -56,10 +56,10 @@ class FPNPredictor(nn.Module):
     
 
 # 2. Context Predictor
-
-class CausalPredictor(nn.Module):
+## 1) version 1
+class CausalPredictor_1(nn.Module):
     def __init__(self, config, in_channels):
-        super(CausalPredictor, self).__init__()
+        super(CausalPredictor_1, self).__init__()
 
         num_classes = 1601 # 나중에 옵션화
         self.embedding_size = config.hidden_size # 나중에 옵션화 cfg.MODEL.ROI_BOX_HEAD.EMBEDDING
