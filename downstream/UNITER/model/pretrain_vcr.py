@@ -76,14 +76,8 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrc_label_target = batch['label_targets']
-            '''
+            
             return self.forward_dc_1(input_ids, position_ids,
-                                    txt_type_ids, img_feat, img_pos_feat,
-                                    attention_mask, gather_index,
-                                    img_masks, img_mask_tgt,
-                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-            '''
-            return self.forward_dc_2(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
@@ -118,7 +112,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
 
         return image_uniter_outputs, zs
 
-    def do_calculus_loss_2(self, class_logits_causal_list, proposals, img_soft_labels, compute_loss):
+    def do_calculus_loss_1(self, class_logits_causal_list, proposals, img_soft_labels, compute_loss):
 
         matcher = Matcher(
             0.7, # cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD = 0.7
