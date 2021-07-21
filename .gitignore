@@ -44,12 +44,14 @@ downstream/UNITER/output_pretrain5_2600_success
 downstream/UNITER/output_success_45000
 downstream/UNITER/output_pretrain_do_calculus/
 downstream/UNITER/output_pretrain_do_calculus_nohup/
+downstream/UNITER/output_pretrain_do_calculus_ver2_nohup/
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
 downstream/UNITER/finetune_output
 downstream/UNITER/vcr_train_output
 downstream/UNITER/output_train_do_calculus/
 downstream/UNITER/output_train_do_calculus_hohup/
+downstream/UNITER/output_train_do_calculus_ver2/
 ### UNITER bouding box
 downstream/UNITER/bbox_set
 downstream/UNITER/bbox
@@ -65,8 +67,10 @@ downstream/UNITER/bbox.tar
 downstream/UNITER/bbox_gt.tar
 ### confounder dictionary & prior
 downstream/UNITER/conf_and_prior
-downstream/UNITER/conf_and_prior_version1_uniter
-downstream/UNITER/conf_and_prior_version2_updown/
+downstream/UNITER/conf_and_prior_version0_uniter
+downstream/UNITER/conf_and_prior_version1_updown/
+downstream/UNITER/conf_and_prior_version2_uniter_total/
+
 
 # files for do-calculus
 dic_coco*

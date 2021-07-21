@@ -76,8 +76,14 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrc_label_target = batch['label_targets']
-            
+            '''
             return self.forward_dc_1(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_dc_2(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
@@ -145,6 +151,25 @@ class UniterForPretrainingForVCR(UniterForPretraining):
         else:
             return prediction_list
     ###
+
+    ### use 'do-calculus' in UNITER pretrain version 2 : make method
+    def do_calculus_2(self, sequence_output, img_feats, proposals, txt_lens, num_bbs):
+
+        image_uniter_outputs = []
+
+        i = 0
+        for (output, txt_len) in zip(sequence_output, txt_lens):
+            image_uniter_output = output[txt_len:txt_len+num_bbs[i]]
+            image_uniter_outputs.append(image_uniter_output)
+            i+=1
+
+        
+        assert len(image_uniter_outputs) == len(num_bbs)
+
+        # class_logits_list = [self.predictor(self_feature) for self_feature in image_uniter_outputs]
+        zs = [self.causal_predictor_2(image_uniter_outputs[i], [num_bbs[i]]) for i in range(len(image_uniter_outputs))]
+
+        return zs
 
     # MLM
     def forward_mlm(self, input_ids, position_ids, txt_type_ids, img_feat,
@@ -250,7 +275,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
         else:
             return prediction_soft_label
 
-    # DC (Do-Calculus)
+    # DC 1 (Do-Calculus 1)
     def forward_dc_1(self, input_ids, position_ids, txt_type_ids,
                     img_feat, img_pos_feat,
                     attention_mask, gather_index, img_masks, img_mask_tgt,
@@ -290,7 +315,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             i += 1
             assert len(uniter_output) == len(z)
             length = len(uniter_output)
-            yz = torch.cat((self.Wx_1(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*self.Wx(uniter_output).size(1))
+            yz = torch.cat((self.Wx(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*self.Wx(uniter_output).size(1))
             yzs.append(yz)
             causal_logits_list.append(self.causal_score(yz))
         
@@ -301,6 +326,68 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             return loss_causal
         else:
             prediction_soft_label = self.do_calculus_loss(causal_logits_list, img_pos_feat, img_soft_labels, compute_loss)
+            return prediction_soft_label
+        ###
+
+    # DC 2 (Do-Calculus 2)
+    def forward_dc_2(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        sequence_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # 
+        # sequence_img_output = sequence_output[:, input_ids.size(1):, :]; import ipdb;ipdb.set_trace(context=10)
+        sequence_img_output = []
+        for i, sequence in enumerate(sequence_output):
+            sequence_img_output.append(sequence[txt_lens[i]:, :])
+        class_logits_causal_list = self.causal_predictor_2(sequence_img_output, num_bbs)
+
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        device = img_pos_feat.device
+        
+
+        # batch_zs = pad_tensors(zs, num_bbs).to(device)
+        '''
+        attention_mask_list, gather_index_list = [], []
+        for i in range(input_ids.size(0)):
+            attention_mask_list.append(attention_mask[i][txt_lens[i]:])
+            #gather_index_list.append(gather_index[i][txt_lens[i]:])
+        #attention_mask = attention_mask[:, input_ids.size(1):]
+        #gather_index = gather_index[:, input_ids.size(1):]
+     
+        attention_mask = pad_tensors(attention_mask_list, num_bbs).to(device)
+        # gather_index = pad_tensors(gather_index_list, num_bbs).to(device)
+        gather_index = gather_index[:, input_ids.size(1)]
+        zs_output = self.uniter(None, position_ids,
+                                      batch_zs, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+        causal_logits_list = []
+        yzs = []
+        i = 0
+        # 밑에서 일렬로 쫙 펴버리자, 그러면서 label도 펴버리자, 그리고 한 번에 loss를 계산하자
+        for (uniter_output, z_output) in zip(image_uniter_outputs, zs_output):
+            z = z_output[:num_bbs[i]]
+            i += 1
+            assert len(uniter_output) == len(z)
+            length = len(uniter_output)
+            yz = torch.cat((self.Wx_1(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*self.Wx(uniter_output).size(1))
+            yzs.append(yz)
+            causal_logits_list.append(self.causal_score(yz))
+        
+            
+        '''
+        if compute_loss:
+            loss_causal = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, compute_loss)
+            return loss_causal
+        else:
+            prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, compute_loss)
             return prediction_soft_label
         ###
 

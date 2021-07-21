@@ -95,11 +95,56 @@ class CausalPredictor_1(nn.Module):
 
         return z
 
+# 2) version 2
+class CausalPredictor_2(nn.Module):
+    def __init__(self, config, in_channels):
+        super(CausalPredictor_2, self).__init__()
+
+        num_classes = 1601 # 나중에 옵션화
+        self.embedding_size = config.hidden_size # 나중에 옵션화 cfg.MODEL.ROI_BOX_HEAD.EMBEDDING
+        representation_size = in_channels
+
+        self.causal_score = nn.Linear(2*representation_size, num_classes)
+        self.Wy = nn.Linear(representation_size, self.embedding_size)
+        self.Wz = nn.Linear(representation_size, self.embedding_size)
+
+        nn.init.normal_(self.causal_score.weight, std=0.01)
+        nn.init.normal_(self.Wy.weight, std=0.02)
+        nn.init.normal_(self.Wz.weight, std=0.02)
+        nn.init.constant_(self.Wy.bias, 0)
+        nn.init.constant_(self.Wz.bias, 0)
+        nn.init.constant_(self.causal_score.bias, 0)
+
+        self.feature_size = representation_size
+        self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        # self.dic = torch.where(self.dic==0, 1e-6, )
+        self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+
+    def forward(self, y, num_bbs):
+        device = y[0].get_device()
+        dic_z = self.dic.to(device)
+        prior = self.prior.to(device)
+
+        # box_size_list = proposals #[proposal for proposal in proposals]
+        # feature_split = y.split(box_size_list)
+        feature_split = []
+        for i, num_bb in enumerate(num_bbs):
+            feature_split.append(y[i][:num_bb, :])
+
+        # yz = self.z_dic(feature_split[0], dic_z, prior)
+        yzs = [self.z_dic(feature_pre_obj, dic_z, prior) for feature_pre_obj in feature_split]
+
+        causal_logits_list = [self.causal_score(yz) for yz in yzs]
+        # causal_logits_list = self.causal_score(yz)
+
+        return causal_logits_list
+
 
     def z_dic(self, y, dic_z, prior):
         """
         Please note that we computer the intervention in the whole batch rather than for one object in the main paper.
         """
+
         length = y.size(0)
         if length == 1:
             print('debug')
@@ -107,13 +152,13 @@ class CausalPredictor_1(nn.Module):
         attention = F.softmax(attention, 1)
         z_hat = attention.unsqueeze(2) * dic_z.unsqueeze(0)
         z = torch.matmul(prior.unsqueeze(0), z_hat).squeeze(1)
-        # yz = z.unsqueeze(0).repeat(length, 1, 1)#.view(-1, y.size(1))
-        # yz = torch.cat((self.Wx(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*y.size(1))
+        # z = z.unsqueeze(0).repeat(length, 1, 1)#.view(-1, y.size(1))
+        yz = torch.cat((y.unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*y.size(1))
 
         # detect if encounter nan
-        if torch.isnan(z).sum():
-            print(z)
-        return z
+        if torch.isnan(yz).sum():
+            print(yz)
+        return yz
 
 
 # 3. calculate loss
@@ -511,7 +556,9 @@ class FastRCNNLossComputation(object):
         prediction_list =[]
         total_loss = []
         i = 0
+ 
         for causal_logit, label in zip(causal_logits_list, labels):
+            
             mask_label = label.unsqueeze(0).repeat(label.size(0), 1)
             mask = 1 - torch.eye(mask_label.size(0)).half().to(device)
             loss_causal = F.cross_entropy(causal_logit, mask_label.view(-1), reduction='none')
@@ -529,7 +576,8 @@ class FastRCNNLossComputation(object):
             object_counter += len(label)
         prediction = torch.cat(prediction_list)
         # causal_loss_mean = causal_loss/object_counter
-        return total_loss, prediction_list
+
+        return total_loss, prediction
 
 def cat(tensors, dim=0):
     """
