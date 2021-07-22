@@ -45,6 +45,7 @@ downstream/UNITER/output_success_45000
 downstream/UNITER/output_pretrain_do_calculus/
 downstream/UNITER/output_pretrain_do_calculus_nohup/
 downstream/UNITER/output_pretrain_do_calculus_ver2_nohup/
+downstream/UNITER/output_pretrain_do_calculus_ver2_10times/
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
 downstream/UNITER/finetune_output

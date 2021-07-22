@@ -177,6 +177,7 @@ class TxtLmdb(object):
 
 class TxtTokLmdb(object):
     def __init__(self, db_dir, max_txt_len=60):
+
         if max_txt_len == -1:
             self.id2len = json.load(open(f'{db_dir}/id2len.json'))
         else:

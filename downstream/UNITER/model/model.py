@@ -368,3 +368,45 @@ class UniterModel(UniterPreTrainedModel):
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
         return encoded_layers
+
+class UniterModelConfPrior(UniterModel):
+    def __init__(self, config, img_dim):
+        super().__init__(config, img_dim)
+        self.embeddings = UniterTextEmbeddings(config)
+        self.img_embeddings = UniterImageEmbeddings(config, img_dim)
+        self.encoder = UniterEncoder(config)
+        self.pooler = BertPooler(config)
+        self.apply(self.init_weights)
+
+    def forward(self, input_ids, position_ids,
+                img_feat, img_pos_feat,
+                attention_mask, gather_index=None, img_masks=None,
+                output_all_encoded_layers=True,
+                txt_type_ids=None, img_type_ids=None):
+        # compute self-attention mask
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = extended_attention_mask.to(
+            dtype=next(self.parameters()).dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+
+        # embedding layer
+        if input_ids is None:
+            # image only
+            embedding_output = self._compute_img_embeddings(
+                img_feat, img_pos_feat, img_masks, img_type_ids)
+        elif img_feat is None:
+            # text only
+            embedding_output = self._compute_txt_embeddings(
+                input_ids, position_ids, txt_type_ids)
+        else:
+            embedding_output = self._compute_img_txt_embeddings(
+                input_ids, position_ids,
+                img_feat, img_pos_feat,
+                gather_index, img_masks, txt_type_ids, img_type_ids)
+        '''
+        encoded_layers = self.encoder(
+            embedding_output, extended_attention_mask,
+            output_all_encoded_layers=output_all_encoded_layers)
+        if not output_all_encoded_layers:
+            encoded_layers = encoded_layers[-1]'''
+        return 0, embedding_output

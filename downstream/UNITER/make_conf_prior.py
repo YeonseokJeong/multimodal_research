@@ -22,7 +22,7 @@ from torch.utils.data.distributed import DistributedSampler
 from data import (PrefetchLoader,
                   DetectFeatLmdb, VcrTxtTokLmdb, VcrConfPriorDataset, TxtTokLmdb,
                   vcr_conf_prior_collate)
-from model.make_conf_prior import UniterForConfPriorForVCR
+from model.make_conf_prior import UniterForConfPriorForVCR, UniterForEmbedConfPriorForVCR
 from utils.logger import LOGGER
 from utils.distributed import all_gather_list
 from utils.misc import NoOp, Struct
@@ -111,7 +111,7 @@ def main(opts):
             img_db_gt=eval_img_db_gt)
 
     # Prepare model
-    model = UniterForConfPriorForVCR.from_pretrained(
+    model = UniterForEmbedConfPriorForVCR.from_pretrained(
         f'{opts.output_dir}/log/model.json', state_dict={},
         img_dim=IMG_DIM)
     model.init_type_embedding()

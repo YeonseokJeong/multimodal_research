@@ -77,8 +77,8 @@ class CausalPredictor_1(nn.Module):
         nn.init.constant_(self.causal_score.bias, 0)
 
         self.feature_size = representation_size
-        self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
-        self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+        self.dic = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        self.prior = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
 
     def forward(self, y, proposals):
         device = y.get_device()
@@ -116,9 +116,9 @@ class CausalPredictor_2(nn.Module):
         nn.init.constant_(self.causal_score.bias, 0)
 
         self.feature_size = representation_size
-        self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        self.dic = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
         # self.dic = torch.where(self.dic==0, 1e-6, )
-        self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+        self.prior = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
 
     def forward(self, y, num_bbs):
         device = y[0].get_device()

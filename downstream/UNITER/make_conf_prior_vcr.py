@@ -22,7 +22,7 @@ from torch.utils.data.distributed import DistributedSampler
 from data import (PrefetchLoader,
                   DetectFeatLmdb, VcrTxtTokLmdb, VcrEvalDataset,
                   vcr_eval_collate)
-from model.vcr import UniterForVisualCommonsenseReasoning
+from model.make_conf_prior import UniterForEmbedConfPriorForVCR
 from utils.logger import LOGGER
 from utils.distributed import all_gather_list
 from utils.misc import NoOp, Struct
@@ -97,7 +97,7 @@ def main(opts):
 
     hps_file = f'{opts.output_dir}/log/hps.json'
     model_opts = Struct(json.load(open(hps_file)))
-    import ipdb;ipdb.set_trace(context=10)
+
     assert opts.split in opts.img_db and opts.split in opts.txt_db
     # load DBs and image dirs
     eval_img_db, eval_img_db_gt = load_img_feat(opts.img_db, model_opts)
@@ -107,7 +107,7 @@ def main(opts):
         img_db_gt=eval_img_db_gt)
 
     # Prepare model
-    model = UniterForVisualCommonsenseReasoning.from_pretrained(
+    model = UniterForEmbedConfPriorForVCR.from_pretrained(
         f'{opts.output_dir}/log/model.json', state_dict={},
         img_dim=IMG_DIM)
     model.init_type_embedding()
@@ -130,7 +130,7 @@ def main(opts):
         else:
             unexpected_keys.add(key)
     LOGGER.info(f"Unexpected_keys: {list(unexpected_keys)}")
-    LOGGER.info(f"Missing_keys: {list(missing_keys)}");import ipdb;ipdb.set_trace(context=10)
+    LOGGER.info(f"Missing_keys: {list(missing_keys)}")
     model.load_state_dict(matched_state_dict, strict=False)
     model.to(device)
     if opts.fp16:
@@ -145,6 +145,7 @@ def main(opts):
     eval_dataloader = PrefetchLoader(eval_dataloader)
 
     _, results = evaluate(model, eval_dataloader, opts)
+    '''
     result_dir = f'{opts.output_dir}/results_{opts.split}'
     if not exists(result_dir) and rank == 0:
         os.makedirs(result_dir)
@@ -158,7 +159,7 @@ def main(opts):
             json.dump(all_results, f)
         probs_df = save_for_submission(
             f'{result_dir}/results_{opts.checkpoint}_all.json')
-        probs_df.to_csv(f'{result_dir}/results_{opts.checkpoint}_all.csv')
+        probs_df.to_csv(f'{result_dir}/results_{opts.checkpoint}_all.csv')'''
 
 
 @torch.no_grad()
@@ -178,6 +179,7 @@ def evaluate(model, eval_loader, opts):
         qids = batch['qids'];#continue ###
         qa_targets, qar_targets = batch['qa_targets'], batch['qar_targets']
         scores = model(batch, compute_loss=False)
+        '''
         scores = scores.view(len(qids), -1)
         if torch.max(qa_targets) > -1:
             vcr_qa_loss = F.cross_entropy(
@@ -204,11 +206,12 @@ def evaluate(model, eval_loader, opts):
             tot_score += curr_score
         for qid, score in zip(qids, scores):
             results[qid] = score.cpu().tolist()
-        n_ex += len(qids)
+        n_ex += len(qids)'''
         val_pbar.update(1)
     ### compute confounder dictionary : save npy files
-    # model.save_conf_prior(opts)
+    model.save_conf_prior(opts)
     ###
+    '''
     val_qa_loss = sum(all_gather_list(val_qa_loss))### ;return ### 
     val_qar_loss = sum(all_gather_list(val_qar_loss))
     tot_qa_score = sum(all_gather_list(tot_qa_score))
@@ -231,8 +234,8 @@ def evaluate(model, eval_loader, opts):
     LOGGER.info(f"evaluation finished in {int(tot_time)} seconds, "
                 f"score_qa: {val_qa_acc*100:.2f} "
                 f"score_qar: {val_qar_acc*100:.2f} "
-                f"score: {val_acc*100:.2f} ")
-    return val_log, results
+                f"score: {val_acc*100:.2f} ")'''
+    return 0, results
 
 
 def compute_accuracies(out_qa, labels_qa, out_qar, labels_qar):
