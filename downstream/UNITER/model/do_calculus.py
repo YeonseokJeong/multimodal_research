@@ -77,8 +77,8 @@ class CausalPredictor_1(nn.Module):
         nn.init.constant_(self.causal_score.bias, 0)
 
         self.feature_size = representation_size
-        self.dic = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
-        self.prior = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+        self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
 
     def forward(self, y, proposals):
         device = y.get_device()
@@ -120,7 +120,7 @@ class CausalPredictor_2(nn.Module):
         # self.dic = torch.where(self.dic==0, 1e-6, )
         self.prior = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
 
-    def forward(self, y, num_bbs):
+    def forward(self, y, num_bbs, img_soft_labels):
         device = y[0].get_device()
         dic_z = self.dic.to(device)
         prior = self.prior.to(device)
@@ -135,9 +135,10 @@ class CausalPredictor_2(nn.Module):
         yzs = [self.z_dic(feature_pre_obj, dic_z, prior) for feature_pre_obj in feature_split]
 
         causal_logits_list = [self.causal_score(yz) for yz in yzs]
+        label_list = [img_soft_label.unsqueeze(1).repeat(1, img_soft_label.size(0), 1).view(-1, img_soft_label.size(1)).argmax(dim=1) for img_soft_label in img_soft_labels]
         # causal_logits_list = self.causal_score(yz)
 
-        return causal_logits_list
+        return causal_logits_list, label_list
 
 
     def z_dic(self, y, dic_z, prior):
@@ -558,7 +559,7 @@ class FastRCNNLossComputation(object):
         i = 0
  
         for causal_logit, label in zip(causal_logits_list, labels):
-            
+
             mask_label = label.unsqueeze(0).repeat(label.size(0), 1)
             mask = 1 - torch.eye(mask_label.size(0)).half().to(device)
             loss_causal = F.cross_entropy(causal_logit, mask_label.view(-1), reduction='none')

@@ -287,8 +287,11 @@ def main(opts):
         n_examples[name] += batch['input_ids'].size(0)
         n_in_units[name] += (batch['attn_masks'] == 1).sum().item()
         task = name.split('_')[0]
-        loss = model(batch, task=task, compute_loss=True)
-
+        if task == 'dc':
+            loss, _, _ = model(batch, task=task, compute_loss=True)
+        else:
+            loss = model(batch, task=task, compute_loss=True)
+        # import ipdb;ipdb.set_trace(context=10)
         if torch.isinf(loss).any():
             loss = torch.zeros_like(loss)
         n_loss_units[name] += loss.size(0)
@@ -509,29 +512,34 @@ def validate_mrc(model, val_loader, task):
 
 @torch.no_grad()
 def validate_dc(model, val_loader):
-    LOGGER.info("start running MRC validation...")
+    LOGGER.info("start running DC validation...")
     val_loss = 0
     n_feat = 0
     st = time()
-    tot_score = 0
+    tot_score = 0;pbar = tqdm(total=2000)
     for i, batch in enumerate(val_loader):
-        prediction_soft_label = model(
-            batch, task=task, compute_loss=False)
-        
+        # import ipdb;ipdb.set_trace(context=10)
+        loss, prediction_soft_label, label_list = model(
+            batch, task = 'dc', compute_loss=False)
+        '''
         # background class should not be the target
         label_targets = batch['label_targets']
         cls_label_targets = label_targets[:, 1:].max(dim=-1)[1] + 1
         loss = F.cross_entropy(
             prediction_soft_label, cls_label_targets,
-            ignore_index=0, reduction='sum')
-        tot_score += compute_accuracy_for_soft_targets(
-            prediction_soft_label[:, 1:], label_targets[:, 1:])
+            ignore_index=0, reduction='sum')'''
+        label_list_tensor = torch.cat(label_list)
+        device = label_list_tensor.device
+        prediction_soft_label_tensor = pad_list(prediction_soft_label).to(device)
 
-        val_loss += loss.item()
-        n_feat += batch['img_mask_tgt'].sum().item()
+        tot_score += compute_accuracy_for_soft_targets_dc(
+            prediction_soft_label_tensor, label_list_tensor)
+        pbar.update(1)#;import ipdb;ipdb.set_trace(context=10)
+        val_loss += loss.sum()
+        n_feat += len(loss)# batch['img_mask_tgt'].sum().item()
     val_loss = sum(all_gather_list(val_loss))
     tot_score = sum(all_gather_list(tot_score))
-    n_feat = sum(all_gather_list(n_feat))
+    # n_feat = sum(all_gather_list(n_feat))
     tot_time = time()-st
     val_loss /= n_feat
     val_acc = tot_score / n_feat
@@ -542,6 +550,27 @@ def validate_dc(model, val_loader):
                 f"score: {val_acc*100:.2f}")
     return val_log
 
+def pad_list(mylist, lens=None, pad=0):
+    """B x [T, ...]"""
+    
+    if lens is None:
+        lens = [len(t) for t in mylist]
+    max_len = max(lens)
+    bs = len(mylist)
+    # hid = tensors[0].size(-1)
+    dtype = mylist[0].dtype
+    output = torch.zeros(bs, max_len, dtype=dtype)
+    if pad:
+        output.data.fill_(pad)
+    for i, (t, l) in enumerate(zip(mylist, lens)):
+        output.data[i, :l] = t.data
+    return output
+
+def compute_accuracy_for_soft_targets_dc(out, labels):
+    outputs = out.max(dim=-1)[1]
+    # labels = labels.max(dim=-1)[1]  # argmax
+    n_correct = (outputs == labels).sum().item()
+    return n_correct
 
 def compute_accuracy_for_soft_targets(out, labels):
     outputs = out.max(dim=-1)[1]

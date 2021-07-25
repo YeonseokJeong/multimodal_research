@@ -46,6 +46,10 @@ downstream/UNITER/output_pretrain_do_calculus/
 downstream/UNITER/output_pretrain_do_calculus_nohup/
 downstream/UNITER/output_pretrain_do_calculus_ver2_nohup/
 downstream/UNITER/output_pretrain_do_calculus_ver2_10times/
+downstream/UNITER/output_pretrain_do_calculus_ver2_10times_stoppded/
+downstream/UNITER/output_pretrain_do_calculus_ver3_stopped/
+downstream/UNITER/output_pretrain_do_calculus_ver3_stopped2/
+downstream/UNITER/output_pretrain_do_calculus_ver3/
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
 downstream/UNITER/finetune_output
@@ -86,7 +90,7 @@ __pycache__
 downstream/UNITER/find.py
 downstream/UNITER/nohup.out
 nohup.out
-
+downstream/UNITER/1.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks

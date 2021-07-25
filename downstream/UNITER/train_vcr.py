@@ -168,7 +168,7 @@ def main(opts):
         checkpoint = torch.load(opts.checkpoint)
     else:
         checkpoint = {}
-
+    import ipdb;ipdb.set_trace(context=10)
     all_dbs = opts.train_txt_dbs + [opts.val_txt_db]
     toker = json.load(open(f'{all_dbs[0]}/meta.json'))['bert']
     assert all(toker == json.load(open(f'{db}/meta.json'))['bert']
