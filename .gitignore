@@ -57,6 +57,7 @@ downstream/UNITER/vcr_train_output
 downstream/UNITER/output_train_do_calculus/
 downstream/UNITER/output_train_do_calculus_hohup/
 downstream/UNITER/output_train_do_calculus_ver2/
+downstream/UNITER/output_train_do_calculus_ver3/
 ### UNITER bouding box
 downstream/UNITER/bbox_set
 downstream/UNITER/bbox

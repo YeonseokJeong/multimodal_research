@@ -292,7 +292,7 @@ def main(opts):
         else:
             loss = model(batch, task=task, compute_loss=True)
         # import ipdb;ipdb.set_trace(context=10)
-        if torch.isinf(loss).any():
+        if torch.isinf(loss).any(): 
             loss = torch.zeros_like(loss)
         n_loss_units[name] += loss.size(0)
         loss = loss.mean()  # loss is not normalized in model
