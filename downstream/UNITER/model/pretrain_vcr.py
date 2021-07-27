@@ -88,8 +88,14 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-            '''
+            
             return self.forward_dc_3(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_dc_4(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
@@ -431,6 +437,33 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, compute_loss)
             return prediction_soft_label'''
         ###
+        loss_causal, prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, True)
+
+        return loss_causal, prediction_soft_label, label_list
+
+    # DC 4 (Do-Calculus 4 : confounder linear transformation)
+    def forward_dc_4(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        _, embedding_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # 
+        # sequence_img_output = sequence_output[:, input_ids.size(1):, :]; import ipdb;ipdb.set_trace(context=10)
+        img_emb_list = []
+        for i, sequence in enumerate(embedding_output):
+            img_emb_list.append(sequence[txt_lens[i]:, :])
+        class_logits_causal_list, label_list = self.causal_predictor_3(img_emb_list, num_bbs, img_soft_labels)
+
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        device = img_pos_feat.device
+        
+
         loss_causal, prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, True)
 
         return loss_causal, prediction_soft_label, label_list

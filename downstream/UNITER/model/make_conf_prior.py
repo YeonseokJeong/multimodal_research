@@ -203,3 +203,55 @@ class UniterForEmbedConfPriorForVCR(UniterForConfPriorForVCR):
         name = opts.txt_db.split('/')[3]
         np.save(f'./conf_and_prior/{name}_dic_vcr_gt_uniter.npy', self.conf_dict_gt)
         np.save(f'./conf_and_prior/{name}_stat_prob_vcr_gt_uniter.npy', self.prior_gt)
+    
+
+class UniterForUpDownConfPriorForVCR(UniterForConfPriorForVCR):
+    def __init__(self, config, img_dim):
+        super().__init__(config, img_dim)
+        self.uniter = UniterModelConfPrior(config, img_dim)
+        self.vcr_output = nn.Sequential(
+            nn.Linear(config.hidden_size, config.hidden_size*2),
+            nn.ReLU(),
+            LayerNorm(config.hidden_size*2, eps=1e-12),
+            nn.Linear(config.hidden_size*2, 2)
+        )
+        self.apply(self.init_weights)
+
+        ### compute confounder dictionary : prepare initialized confounder dictionary & prior
+        self.conf_dict = np.zeros((1601, img_dim))
+        self.conf_dict_gt = np.zeros((1601, img_dim))
+        self.prior = np.zeros(1601)
+        self.prior_gt = np.zeros(1601)
+
+    def forward(self, batch, compute_loss=True):
+        batch = defaultdict(lambda: None, batch)
+        input_ids = batch['input_ids']
+        position_ids = batch['position_ids']
+        img_feat = batch['img_feat']
+        img_pos_feat = batch['img_pos_feat']
+        attn_masks = batch['attn_masks']
+        gather_index = batch['gather_index']
+        sequence_output, embedding_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attn_masks, gather_index,
+                                      output_all_encoded_layers=False)
+
+        ### compute confounder dictionary : extract soft label
+        img_soft_label = batch['img_soft_label']
+        txt_lens = batch['txt_lens']#;import ipdb;ipdb.set_trace(context=10)
+        for batch_idx in range(len(embedding_output)):
+            img_set = img_feat[batch_idx]
+
+            #import ipdb;ipdb.set_trace(context=10)
+            for idx in range(len(img_soft_label[batch_idx])):
+                
+                label = img_soft_label[batch_idx][idx].argmax()
+                self.prior_gt[label] += 1
+                self.conf_dict_gt[label] += img_set[idx].cpu().numpy()
+
+        return 1
+    
+    def save_conf_prior(self, opts):
+        name = opts.txt_db.split('/')[3]
+        np.save(f'./conf_and_prior/{name}_dic_vcr_gt_uniter.npy', self.conf_dict_gt)
+        np.save(f'./conf_and_prior/{name}_stat_prob_vcr_gt_uniter.npy', self.prior_gt)

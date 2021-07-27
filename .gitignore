@@ -50,6 +50,8 @@ downstream/UNITER/output_pretrain_do_calculus_ver2_10times_stoppded/
 downstream/UNITER/output_pretrain_do_calculus_ver3_stopped/
 downstream/UNITER/output_pretrain_do_calculus_ver3_stopped2/
 downstream/UNITER/output_pretrain_do_calculus_ver3/
+downstream/UNITER/output_pretrain_do_calculus_ver4/
+downstream/UNITER/version4_pretrain.txt
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
 downstream/UNITER/finetune_output
@@ -76,6 +78,7 @@ downstream/UNITER/conf_and_prior
 downstream/UNITER/conf_and_prior_version0_uniter
 downstream/UNITER/conf_and_prior_version1_updown/
 downstream/UNITER/conf_and_prior_version2_uniter_total/
+downstream/UNITER/conf_and_prior_version3_uniter_embedder/
 
 
 # files for do-calculus

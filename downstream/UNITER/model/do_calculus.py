@@ -95,7 +95,7 @@ class CausalPredictor_1(nn.Module):
 
         return z
 
-# 2) version 2
+# 2) version 2, 3 
 class CausalPredictor_2(nn.Module):
     def __init__(self, config, in_channels):
         super(CausalPredictor_2, self).__init__()
@@ -116,9 +116,9 @@ class CausalPredictor_2(nn.Module):
         nn.init.constant_(self.causal_score.bias, 0)
 
         self.feature_size = representation_size
-        self.dic = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
         # self.dic = torch.where(self.dic==0, 1e-6, )
-        self.prior = torch.tensor(np.load('./conf_and_prior_version2_uniter_total/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+        self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
 
     def forward(self, y, num_bbs, img_soft_labels):
         device = y[0].get_device()
@@ -161,6 +161,51 @@ class CausalPredictor_2(nn.Module):
             print(yz)
         return yz
 
+# 3) version 4
+class CausalPredictor_3(CausalPredictor_2):
+    def __init__(self, config, in_channels):
+        super(CausalPredictor_2, self).__init__()
+        num_classes = 1601 # 나중에 옵션화
+        self.embedding_size = config.hidden_size # 나중에 옵션화 cfg.MODEL.ROI_BOX_HEAD.EMBEDDING
+        representation_size = in_channels
+
+        self.causal_score = nn.Linear(2*self.embedding_size, num_classes)
+        self.Wy = nn.Linear(self.embedding_size, self.embedding_size)
+        self.Wz = nn.Linear(representation_size, self.embedding_size)
+        self.Wz_1 = nn.Linear(representation_size, self.embedding_size)
+
+        nn.init.normal_(self.causal_score.weight, std=0.01)
+        nn.init.normal_(self.Wy.weight, std=0.02)
+        nn.init.normal_(self.Wz.weight, std=0.02)
+        nn.init.normal_(self.Wz_1.weight, std=0.02)
+        nn.init.constant_(self.Wy.bias, 0)
+        nn.init.constant_(self.Wz.bias, 0)
+        nn.init.constant_(self.Wz_1.bias, 0)
+        nn.init.constant_(self.causal_score.bias, 0)
+
+        self.feature_size = representation_size
+        self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+
+    def z_dic(self, y, dic_z, prior):
+        """
+        Please note that we computer the intervention in the whole batch rather than for one object in the main paper.
+        """
+
+        length = y.size(0)
+        if length == 1:
+            print('debug')
+        attention = torch.mm(self.Wy(y), self.Wz(dic_z).t()) / (self.embedding_size ** 0.5)
+        attention = F.softmax(attention, 1)
+        z_hat = attention.unsqueeze(2) * self.Wz_1(dic_z).unsqueeze(0)
+        z = torch.matmul(prior.unsqueeze(0), z_hat).squeeze(1)
+        # z = z.unsqueeze(0).repeat(length, 1, 1)#.view(-1, y.size(1))
+        yz = torch.cat((y.unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*y.size(1))
+
+        # detect if encounter nan
+        if torch.isnan(yz).sum():
+            print(yz)
+        return yz
 
 # 3. calculate loss
 ## 1) Matcher
