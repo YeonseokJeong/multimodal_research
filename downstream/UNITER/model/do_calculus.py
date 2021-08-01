@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch
 import numpy as np
 import math
+from horovod import torch as hvd
 
 '''
 class FastRCNNPredictor(nn.Module):
@@ -117,13 +118,16 @@ class CausalPredictor_2(nn.Module):
 
         self.feature_size = representation_size
         self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        self.dic = self.dic.to(torch.device("cuda", hvd.local_rank()))
         # self.dic = torch.where(self.dic==0, 1e-6, )
         self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+        self.prior = self.prior.to(torch.device("cuda", hvd.local_rank()))
 
     def forward(self, y, num_bbs, img_soft_labels):
-        device = y[0].get_device()
-        dic_z = self.dic.to(device)
-        prior = self.prior.to(device)
+
+        # device = y[0].get_device()
+        dic_z = self.dic
+        prior = self.prior
 
         # box_size_list = proposals #[proposal for proposal in proposals]
         # feature_split = y.split(box_size_list)
@@ -185,7 +189,9 @@ class CausalPredictor_3(CausalPredictor_2):
 
         self.feature_size = representation_size
         self.dic = torch.tensor(np.load('./conf_and_prior/dic_vcr_tot.npy'), dtype=torch.float16) # cfg.DIC_FILE[1:] 나중에 옵션화
+        self.dic = self.dic.to(torch.device("cuda", hvd.local_rank()))
         self.prior = torch.tensor(np.load('./conf_and_prior/stat_prob_vcr_tot.npy'), dtype=torch.float16) # cfg.PRIOR_PROB 나중에 옵션화
+        self.prior = self.prior.to(torch.device("cuda", hvd.local_rank()))
 
     def z_dic(self, y, dic_z, prior):
         """

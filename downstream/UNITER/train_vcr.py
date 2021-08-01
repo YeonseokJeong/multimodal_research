@@ -172,7 +172,7 @@ def main(opts):
     all_dbs = opts.train_txt_dbs + [opts.val_txt_db]
     toker = json.load(open(f'{all_dbs[0]}/meta.json'))['bert']
     assert all(toker == json.load(open(f'{db}/meta.json'))['bert']
-               for db in all_dbs)
+               for db in all_dbs)#;import ipdb;ipdb.set_trace(context=10)
     model = UniterForVisualCommonsenseReasoning.from_pretrained(
         opts.model_config, checkpoint, img_dim=IMG_DIM)
     model.init_type_embedding()

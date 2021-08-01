@@ -232,7 +232,7 @@ def main(opts):
                              accum_steps=opts.gradient_accumulation_steps,
                              distributed=n_gpu > 1)
     meta_loader = PrefetchLoader(meta_loader)
-
+    
     # Prepare model
     if opts.checkpoint:
         checkpoint = torch.load(opts.checkpoint)
@@ -382,10 +382,12 @@ def validate(model, val_dataloaders):
         elif task.startswith('mrc'):
             val_log = validate_mrc(model, loader, task)
         elif task.startswith('dc'):
+            '''
             try:
                 val_log = validate_dc(model, loader)
             except:
                 pass
+            '''
         else:
             raise ValueError(f'Undefined task {task}')
         try:

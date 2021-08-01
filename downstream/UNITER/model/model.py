@@ -10,10 +10,11 @@ import copy
 import json
 import logging
 from io import open
-
+from horovod import torch as hvd
 import torch
 from torch import nn
 from apex.normalization.fused_layer_norm import FusedLayerNorm
+import numpy as np
 
 from .layer import BertLayer, BertPooler
 
@@ -293,8 +294,7 @@ class UniterEncoder(nn.Module):
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
         return all_encoder_layers
-
-
+'''
 class UniterModel(UniterPreTrainedModel):
     """ Modification for Joint Vision-Language Encoding
     """
@@ -368,6 +368,194 @@ class UniterModel(UniterPreTrainedModel):
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
         return encoded_layers, embedding_output
+
+'''
+class UniterModel(UniterPreTrainedModel):
+    """ Modification for Joint Vision-Language Encoding
+    """
+    def __init__(self, config, img_dim):
+        super().__init__(config)
+        self.embeddings = UniterTextEmbeddings(config)
+        self.img_embeddings = UniterImageEmbeddings(config, img_dim)
+        self.img_embeddings_for_do_cal = UniterImageEmbeddings(config, img_dim)
+        self.encoder = UniterEncoder(config)
+        self.pooler = BertPooler(config)
+        self.emb_weight = nn.Linear(config.hidden_size, config.hidden_size)
+        self.emb_weight_do_cal = nn.Linear(config.hidden_size, config.hidden_size)
+        self.apply(self.init_weights)
+        self.record_orig = torch.zeros(config.hidden_size, config.hidden_size, dtype=torch.half).to(torch.device("cuda", hvd.local_rank()))
+        self.record_docal = torch.zeros(config.hidden_size, config.hidden_size, dtype=torch.half).to(torch.device("cuda", hvd.local_rank()))
+
+    def _compute_txt_embeddings(self, input_ids, position_ids,
+                                txt_type_ids=None):
+        output = self.embeddings(input_ids, position_ids, txt_type_ids)
+        return output
+
+    def _compute_img_embeddings(self, img_feat, img_pos_feat, img_masks=None,
+                                img_type_ids=None):
+        if img_type_ids is None:
+            img_type_ids = torch.ones_like(img_feat[:, :, 0].long())
+        img_type_embeddings = self.embeddings.token_type_embeddings(
+            img_type_ids)
+        output = self.img_embeddings(img_feat, img_pos_feat,
+                                     img_type_embeddings, img_masks)
+        output_do_cal = self.img_embeddings_for_do_cal(img_feat, img_pos_feat,
+                                     img_type_embeddings, img_masks)
+        return output, output_do_cal
+
+    def _compute_img_txt_embeddings(self, input_ids, position_ids,
+                                    img_feat, img_pos_feat,
+                                    gather_index, img_masks=None,
+                                    txt_type_ids=None, img_type_ids=None):
+        txt_emb = self._compute_txt_embeddings(
+            input_ids, position_ids, txt_type_ids)
+        img_emb, img_emb_do_cal = self._compute_img_embeddings(
+            img_feat, img_pos_feat, img_masks, img_type_ids)
+        # align back to most compact input
+        gather_index = gather_index.unsqueeze(-1).expand(
+            -1, -1, self.config.hidden_size)
+        embedding_output  = torch.gather(torch.cat([txt_emb, img_emb], dim=1),
+                                        dim=1, index=gather_index)
+        embedding_output_do_cal  = torch.gather(torch.cat([txt_emb, img_emb_do_cal], dim=1),
+                                        dim=1, index=gather_index)
+        return embedding_output, embedding_output_do_cal
+
+    def forward(self, input_ids, position_ids,
+                img_feat, img_pos_feat,
+                attention_mask, gather_index=None, img_masks=None,
+                output_all_encoded_layers=True,
+                txt_type_ids=None, img_type_ids=None):
+        # compute self-attention mask
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = extended_attention_mask.to(
+            dtype=next(self.parameters()).dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+
+        # embedding layer
+        if input_ids is None:
+            # image only
+            embedding_output = self._compute_img_embeddings(
+                img_feat, img_pos_feat, img_masks, img_type_ids)
+        elif img_feat is None:
+            # text only
+            embedding_output, embedding_output_do_cal = self._compute_txt_embeddings(
+                input_ids, position_ids, txt_type_ids)
+            embedding_output = self.emb_weight(embedding_output) + self.emb_weight_do_cal(embedding_output_do_cal)
+        else:
+            embedding_output, embedding_output_do_cal = self._compute_img_txt_embeddings(
+                input_ids, position_ids,
+                img_feat, img_pos_feat,
+                gather_index, img_masks, txt_type_ids, img_type_ids)
+            embedding_output = 0.5*embedding_output + 0.5*embedding_output_do_cal
+        '''
+        print('original')
+        print(f'{float(torch.abs(self.emb_weight.weight-self.record_orig).sum()):0.100f}')
+        print('do_cal')
+        print(f'{float(torch.abs(self.emb_weight_do_cal.weight-self.record_docal).sum()):0.100f}')
+        self.record_orig = self.emb_weight.weight
+        self.record_docal = self.emb_weight_do_cal.weight
+        
+        print('original')
+        #print(f'{float(torch.abs(self.emb_weight.weight).sum()):0.10f}')
+        # print(float(torch.abs(self.emb_weight.weight).sum()))
+        #a = self.emb_weight.weight.data
+        #print(np.absolute(a.cpu().numpy()).sum(axis=1))
+        print(self.emb_weight.weight[0][:10])
+        print('do_cal')
+        #print(f'{float(torch.abs(self.emb_weight_do_cal.weight).sum()):0.10f}')
+        #print(float(torch.abs(self.emb_weight.weight).sum()))
+        #b = self.emb_weight_do_cal.weight.data
+        #print(np.absolute(b.cpu().numpy()).sum(axis=1))
+        print(self.emb_weight_do_cal.weight[0][:10])
+        '''
+
+        encoded_layers = self.encoder(
+            embedding_output, extended_attention_mask,
+            output_all_encoded_layers=output_all_encoded_layers)
+        if not output_all_encoded_layers:
+            encoded_layers = encoded_layers[-1]
+        return encoded_layers, embedding_output_do_cal
+
+class UniterModelV5(UniterPreTrainedModel):
+    """ Modification for Joint Vision-Language Encoding
+    """
+    def __init__(self, config, img_dim):
+        super().__init__(config)
+        self.embeddings = UniterTextEmbeddings(config)
+        self.img_embeddings = UniterImageEmbeddings(config, img_dim)
+        self.img_embeddings_for_do_cal = UniterImageEmbeddings(config, img_dim)
+        self.encoder = UniterEncoder(config)
+        self.pooler = BertPooler(config)
+        self.apply(self.init_weights)
+
+    def _compute_txt_embeddings(self, input_ids, position_ids,
+                                txt_type_ids=None):
+        output = self.embeddings(input_ids, position_ids, txt_type_ids)
+        return output
+
+    def _compute_img_embeddings(self, img_feat, img_pos_feat, img_masks=None,
+                                img_type_ids=None):
+        if img_type_ids is None:
+            img_type_ids = torch.ones_like(img_feat[:, :, 0].long())
+        img_type_embeddings = self.embeddings.token_type_embeddings(
+            img_type_ids)
+        output = self.img_embeddings(img_feat, img_pos_feat,
+                                     img_type_embeddings, img_masks)
+        output_do_cal = self.img_embeddings_for_do_cal(img_feat, img_pos_feat,
+                                     img_type_embeddings, img_masks)
+        return output, output_do_cal
+
+    def _compute_img_txt_embeddings(self, input_ids, position_ids,
+                                    img_feat, img_pos_feat,
+                                    gather_index, img_masks=None,
+                                    txt_type_ids=None, img_type_ids=None):
+        txt_emb = self._compute_txt_embeddings(
+            input_ids, position_ids, txt_type_ids)
+        img_emb, img_emb_do_cal = self._compute_img_embeddings(
+            img_feat, img_pos_feat, img_masks, img_type_ids)
+        # align back to most compact input
+        gather_index = gather_index.unsqueeze(-1).expand(
+            -1, -1, self.config.hidden_size)
+        embedding_output  = torch.gather(torch.cat([txt_emb, img_emb], dim=1),
+                                        dim=1, index=gather_index)
+        embedding_output_do_cal  = torch.gather(torch.cat([txt_emb, img_emb_do_cal], dim=1),
+                                        dim=1, index=gather_index)
+        return embedding_output, embedding_output_do_cal
+
+    def forward(self, input_ids, position_ids,
+                img_feat, img_pos_feat,
+                attention_mask, gather_index=None, img_masks=None,
+                output_all_encoded_layers=True,
+                txt_type_ids=None, img_type_ids=None):
+        # compute self-attention mask
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = extended_attention_mask.to(
+            dtype=next(self.parameters()).dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+
+        # embedding layer
+        if input_ids is None:
+            # image only
+            embedding_output = self._compute_img_embeddings(
+                img_feat, img_pos_feat, img_masks, img_type_ids)
+        elif img_feat is None:
+            # text only
+            embedding_output, embedding_output_do_cal = self._compute_txt_embeddings(
+                input_ids, position_ids, txt_type_ids)
+            embedding_output = self.emb_weight(embedding_output) + self.emb_weight_do_cal(embedding_output_do_cal)
+        else:
+            embedding_output, embedding_output_do_cal = self._compute_img_txt_embeddings(
+                input_ids, position_ids,
+                img_feat, img_pos_feat,
+                gather_index, img_masks, txt_type_ids, img_type_ids)
+            embedding_output = self.emb_weight(embedding_output) + self.emb_weight_do_cal(embedding_output_do_cal)
+
+        encoded_layers = self.encoder(
+            embedding_output, extended_attention_mask,
+            output_all_encoded_layers=output_all_encoded_layers)
+        if not output_all_encoded_layers:
+            encoded_layers = encoded_layers[-1]
+        return encoded_layers, embedding_output_do_cal
 
 class UniterModelConfPrior(UniterModel):
     def __init__(self, config, img_dim):
@@ -470,3 +658,79 @@ class UniterModelDoCalV3(UniterModel):
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
         return encoded_layers, embedding_output
+
+'''
+class UniterModel(UniterPreTrainedModel):
+    """ Modification for Joint Vision-Language Encoding
+    """
+    def __init__(self, config, img_dim):
+        super().__init__(config)
+        self.embeddings = UniterTextEmbeddings(config)
+        self.img_embeddings = UniterImageEmbeddings(config, img_dim)
+        self.encoder = UniterEncoder(config)
+        self.pooler = BertPooler(config)
+        self.apply(self.init_weights)
+
+    def _compute_txt_embeddings(self, input_ids, position_ids,
+                                txt_type_ids=None):
+        output = self.embeddings(input_ids, position_ids, txt_type_ids)
+        return output
+
+    def _compute_img_embeddings(self, img_feat, img_pos_feat, img_masks=None,
+                                img_type_ids=None):
+        if img_type_ids is None:
+            img_type_ids = torch.ones_like(img_feat[:, :, 0].long())
+        img_type_embeddings = self.embeddings.token_type_embeddings(
+            img_type_ids)
+        output = self.img_embeddings(img_feat, img_pos_feat,
+                                     img_type_embeddings, img_masks)
+        return output
+
+    def _compute_img_txt_embeddings(self, input_ids, position_ids,
+                                    img_feat, img_pos_feat,
+                                    gather_index, img_masks=None,
+                                    txt_type_ids=None, img_type_ids=None):
+        txt_emb = self._compute_txt_embeddings(
+            input_ids, position_ids, txt_type_ids)
+        img_emb = self._compute_img_embeddings(
+            img_feat, img_pos_feat, img_masks, img_type_ids)
+        # align back to most compact input
+        gather_index = gather_index.unsqueeze(-1).expand(
+            -1, -1, self.config.hidden_size)
+        embedding_output = torch.gather(torch.cat([txt_emb, img_emb], dim=1),
+                                        dim=1, index=gather_index)
+        return embedding_output
+
+    def forward(self, input_ids, position_ids,
+                img_feat, img_pos_feat,
+                attention_mask, gather_index=None, img_masks=None,
+                output_all_encoded_layers=True,
+                txt_type_ids=None, img_type_ids=None):
+        # compute self-attention mask
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = extended_attention_mask.to(
+            dtype=next(self.parameters()).dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+
+        # embedding layer
+        if input_ids is None:
+            # image only
+            embedding_output = self._compute_img_embeddings(
+                img_feat, img_pos_feat, img_masks, img_type_ids)
+        elif img_feat is None:
+            # text only
+            embedding_output = self._compute_txt_embeddings(
+                input_ids, position_ids, txt_type_ids)
+        else:
+            embedding_output = self._compute_img_txt_embeddings(
+                input_ids, position_ids,
+                img_feat, img_pos_feat,
+                gather_index, img_masks, txt_type_ids, img_type_ids)
+
+        encoded_layers = self.encoder(
+            embedding_output, extended_attention_mask,
+            output_all_encoded_layers=output_all_encoded_layers)
+        if not output_all_encoded_layers:
+            encoded_layers = encoded_layers[-1]
+        return encoded_layers, embedding_output
+'''

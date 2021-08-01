@@ -12,7 +12,7 @@ from torch.nn import functional as F
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 
 from .layer import GELU, BertOnlyMLMHead
-from .model import UniterModel, UniterPreTrainedModel, UniterModelDoCalV3
+from .model import UniterModel, UniterPreTrainedModel, UniterModelDoCalV3, UniterModelV5
 from .ot import optimal_transport_dist
 from .do_calculus import FPNPredictor, CausalPredictor_1, CausalPredictor_2, CausalPredictor_3
 
@@ -73,7 +73,7 @@ class UniterForPretraining(UniterPreTrainedModel):
         self.causal_predictor_2 = CausalPredictor_2(config, config.hidden_size)
         self.causal_predictor_3 = CausalPredictor_3(config, img_dim)
         self.Wx = nn.Linear(config.hidden_size, config.hidden_size)
-        #self.Wx = nn.Linear(config.hidden_size, config.hidden_size)
+        
         nn.init.normal_(self.Wx.weight, std=0.02)
         nn.init.constant_(self.Wx.bias, 0)
         self.causal_score = nn.Linear(2*config.hidden_size, 1601)
@@ -81,7 +81,7 @@ class UniterForPretraining(UniterPreTrainedModel):
         nn.init.constant_(self.causal_score.bias, 0)
         ###
         ### use 'do-calculus' in UNITER pretrain embedder (version 3)
-        self.uniterv3 = UniterModelDoCalV3(config, img_dim)
+
 
     def forward(self, batch, task, compute_loss=True):
         batch = defaultdict(lambda: None, batch)
