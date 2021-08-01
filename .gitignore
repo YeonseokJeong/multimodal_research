@@ -51,7 +51,14 @@ downstream/UNITER/output_pretrain_do_calculus_ver3_stopped/
 downstream/UNITER/output_pretrain_do_calculus_ver3_stopped2/
 downstream/UNITER/output_pretrain_do_calculus_ver3/
 downstream/UNITER/output_pretrain_do_calculus_ver4/
+downstream/UNITER/output_pretrain_do_calculus_ver5_fail/
+downstream/UNITER/output_pretrain_do_calculus_ver5/
+
+downstream/UNITER/output_pretrain_do_calculus_2nd_only_do_cal/
+
 downstream/UNITER/version4_pretrain.txt
+downstream/UNITER/output_weight_search/
+
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
 downstream/UNITER/finetune_output
@@ -60,6 +67,19 @@ downstream/UNITER/output_train_do_calculus/
 downstream/UNITER/output_train_do_calculus_hohup/
 downstream/UNITER/output_train_do_calculus_ver2/
 downstream/UNITER/output_train_do_calculus_ver3/
+downstream/UNITER/output_train_do_calculus_ver4/
+downstream/UNITER/output_train_do_calculus_ver4_test/
+downstream/UNITER/output_train_do_calculus_ver5_fail/
+downstream/UNITER/output_train_do_calculus_ver5/
+
+downstream/UNITER/output_train_do_calculus_ver2_4times/
+downstream/UNITER/output_train_do_calculus_ver2_6times/
+
+downstream/UNITER/output_train_do_calculus_2nd_not/
+downstream/UNITER/output_train_do_calculus_2nd_only_do_cal/
+
+downstream/UNITER/version5_train.txt
+
 ### UNITER bouding box
 downstream/UNITER/bbox_set
 downstream/UNITER/bbox
