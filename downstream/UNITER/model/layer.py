@@ -201,7 +201,6 @@ class BertPredictionHeadTransform(nn.Module):
         hidden_states = self.LayerNorm(hidden_states)
         return hidden_states
 
-
 class BertLMPredictionHead(nn.Module):
     def __init__(self, config, bert_model_embedding_weights):
         super(BertLMPredictionHead, self).__init__()
@@ -231,3 +230,34 @@ class BertOnlyMLMHead(nn.Module):
     def forward(self, sequence_output):
         prediction_scores = self.predictions(sequence_output)
         return prediction_scores
+
+class BertPredictionHeadTransformDC(nn.Module):
+    def __init__(self, config):
+        super(BertPredictionHeadTransformDC, self).__init__()
+        self.dense = nn.Linear(config.v_hidden_size, config.v_hidden_size)
+        if isinstance(config.hidden_act, str):
+            self.transform_act_fn = ACT2FN[config.hidden_act]
+        else:
+            self.transform_act_fn = config.hidden_act
+        self.LayerNorm = BertLayerNorm(config.v_hidden_size, eps=1e-12)
+
+    def forward(self, hidden_states):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.transform_act_fn(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states)
+        return hidden_states
+
+class BertImagePredictionHead(nn.Module):
+    def __init__(self, config, v_hidden_size=1024):
+        super(BertImagePredictionHead, self).__init__()
+        config.v_hidden_size = v_hidden_size
+        self.transform = BertPredictionHeadTransformDC(config)
+
+        # The output weights are the same as the input embeddings, but there is
+        # an output-only bias for each token.
+        self.decoder = nn.Linear(config.v_hidden_size, 1601)
+
+    def forward(self, hidden_states):
+        hidden_states = self.transform(hidden_states)
+        hidden_states = self.decoder(hidden_states)
+        return hidden_states

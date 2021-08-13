@@ -294,7 +294,7 @@ class UniterEncoder(nn.Module):
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
         return all_encoder_layers
-'''
+
 class UniterModel(UniterPreTrainedModel):
     """ Modification for Joint Vision-Language Encoding
     """
@@ -382,6 +382,7 @@ class UniterModel(UniterPreTrainedModel):
         self.pooler = BertPooler(config)
         self.emb_weight = nn.Linear(config.hidden_size, config.hidden_size)
         self.emb_weight_do_cal = nn.Linear(config.hidden_size, config.hidden_size)
+        self.emb_trans_768 = nn.Linear(2*config.hidden_size, config.hidden_size)
         self.apply(self.init_weights)
         self.record_orig = torch.zeros(config.hidden_size, config.hidden_size, dtype=torch.half).to(torch.device("cuda", hvd.local_rank()))
         self.record_docal = torch.zeros(config.hidden_size, config.hidden_size, dtype=torch.half).to(torch.device("cuda", hvd.local_rank()))
@@ -440,14 +441,18 @@ class UniterModel(UniterPreTrainedModel):
             # text only
             embedding_output, embedding_output_do_cal = self._compute_txt_embeddings(
                 input_ids, position_ids, txt_type_ids)
-            embedding_output = self.emb_weight(embedding_output) + self.emb_weight_do_cal(embedding_output_do_cal)
+            # embedding_output = self.emb_weight(embedding_output) + self.emb_weight_do_cal(embedding_output_do_cal)
+            embedding_output = self.emb_trans_768(torch.cat((embedding_output, embedding_output_do_cal), dim=-1))
         else:
             embedding_output, embedding_output_do_cal = self._compute_img_txt_embeddings(
                 input_ids, position_ids,
                 img_feat, img_pos_feat,
                 gather_index, img_masks, txt_type_ids, img_type_ids)
-            embedding_output = 0.5*embedding_output + 0.5*embedding_output_do_cal
-        '''
+            # embedding_output = self.emb_weight(embedding_output) + self.emb_weight_do_cal(embedding_output_do_cal) # version 5-0
+            # embedding_output = 0.5*embedding_output + 0.5*embedding_output_do_cal # version 5-1
+            embedding_output = self.emb_trans_768(torch.cat((embedding_output, embedding_output_do_cal), dim=-1))
+
+
         print('original')
         print(f'{float(torch.abs(self.emb_weight.weight-self.record_orig).sum()):0.100f}')
         print('do_cal')
@@ -467,7 +472,7 @@ class UniterModel(UniterPreTrainedModel):
         #b = self.emb_weight_do_cal.weight.data
         #print(np.absolute(b.cpu().numpy()).sum(axis=1))
         print(self.emb_weight_do_cal.weight[0][:10])
-        '''
+
 
         encoded_layers = self.encoder(
             embedding_output, extended_attention_mask,
@@ -475,7 +480,7 @@ class UniterModel(UniterPreTrainedModel):
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
         return encoded_layers, embedding_output_do_cal
-
+'''
 class UniterModelV5(UniterPreTrainedModel):
     """ Modification for Joint Vision-Language Encoding
     """

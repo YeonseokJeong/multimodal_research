@@ -68,7 +68,14 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrc_label_target = batch['label_targets']
+            '''
             return self.forward_mrc(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_mrc_dc(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
@@ -77,6 +84,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrc_label_target = batch['label_targets']
+            
             '''
             return self.forward_dc_1(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
@@ -101,13 +109,14 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-            '''
+
             return self.forward_dc_5(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-
+            '''
+            raise ValueError('dc is invalid task now')
         else:
             raise ValueError('invalid task')
     
@@ -277,6 +286,42 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                                     img_mask_tgt)
         prediction_soft_label = self.region_classifier(masked_output)
 
+        if compute_loss:
+            if "kl" in task:
+                prediction_soft_label = F.log_softmax(
+                    prediction_soft_label, dim=-1)
+                mrc_loss = F.kl_div(
+                    prediction_soft_label, label_targets, reduction='none')
+            else:
+                # background class should not be the target
+                label_targets = torch.max(label_targets[:, 1:], dim=-1)[1] + 1
+                mrc_loss = F.cross_entropy(
+                    prediction_soft_label, label_targets,
+                    ignore_index=0, reduction='none')
+            return mrc_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_soft_label
+     # MRC_DC
+    def forward_mrc_dc(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        import ipdb;ipdb.set_trace(context=10)
+        causal_output = self.causal_v(sequence_output)
+        masked_output = self._compute_masked_hidden(causal_output, img_mask_tgt)
+        prediction_soft_label = self.causal_predictor_v(masked_output)
+        '''
+        # only compute masked regions for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+        prediction_soft_label = self.region_classifier(masked_output)
+        '''
         if compute_loss:
             if "kl" in task:
                 prediction_soft_label = F.log_softmax(

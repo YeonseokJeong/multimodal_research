@@ -11,10 +11,11 @@ from torch import nn
 from torch.nn import functional as F
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 
-from .layer import GELU, BertOnlyMLMHead
+from .layer import GELU, BertOnlyMLMHead, BertImagePredictionHead
 from .model import UniterModel, UniterPreTrainedModel, UniterModelDoCalV3, UniterModelV5
 from .ot import optimal_transport_dist
 from .do_calculus import FPNPredictor, CausalPredictor_1, CausalPredictor_2, CausalPredictor_3
+from .united_do_calculus import Causal_v
 
 
 class RegionFeatureRegression(nn.Module):
@@ -68,6 +69,7 @@ class UniterForPretraining(UniterPreTrainedModel):
         self.itm_output = nn.Linear(config.hidden_size, 2)
         self.apply(self.init_weights)
         ### use 'do-calculus' in UNITER pretrain 2: make method 
+        '''
         self.predictor = FPNPredictor(config, img_dim) # use 'do-calculus' in UNITER pretrain 2 
         self.causal_predictor_1 = CausalPredictor_1(config, img_dim) # use 'do-calculus' in UNITER pretrain 2
         self.causal_predictor_2 = CausalPredictor_2(config, config.hidden_size)
@@ -81,7 +83,9 @@ class UniterForPretraining(UniterPreTrainedModel):
         nn.init.constant_(self.causal_score.bias, 0)
         ###
         ### use 'do-calculus' in UNITER pretrain embedder (version 3)
-
+        '''
+        self.causal_v = Causal_v()
+        self.causal_predictor_v = BertImagePredictionHead(config, 2048)
 
     def forward(self, batch, task, compute_loss=True):
         batch = defaultdict(lambda: None, batch)

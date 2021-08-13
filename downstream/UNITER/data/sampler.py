@@ -54,6 +54,7 @@ class TokenBucketSampler(Sampler):
             if not self._droplast and batch_indices:
                 batches.append(batch_indices)
         random.shuffle(batches)
+
         return iter(batches)
 
     def __len__(self):

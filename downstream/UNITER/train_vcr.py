@@ -230,7 +230,7 @@ def main(opts):
     start = time()
     # quick hack for amp delay_unscale bug
     optimizer.zero_grad()
-    optimizer.step()
+    optimizer.step()#;import ipdb;ipdb.set_trace(context=10)
     while True:
         for step, batch in enumerate(train_dataloader):
             n_examples += batch['input_ids'].size(0)

@@ -53,11 +53,17 @@ downstream/UNITER/output_pretrain_do_calculus_ver3/
 downstream/UNITER/output_pretrain_do_calculus_ver4/
 downstream/UNITER/output_pretrain_do_calculus_ver5_fail/
 downstream/UNITER/output_pretrain_do_calculus_ver5/
+downstream/UNITER/output_pretrain_do_calculus_ver5-2/
 
 downstream/UNITER/output_pretrain_do_calculus_2nd_only_do_cal/
+downstream/UNITER/output_pretrain_by_only_2nd_stage/
+downstream/UNITER/output_pretrain_2nd_not/
+downstream/UNITER/output_pretrain_init/
 
 downstream/UNITER/version4_pretrain.txt
 downstream/UNITER/output_weight_search/
+
+downstream/UNITER/output_pretrain_1_1_united_do_calculus/
 
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
@@ -71,12 +77,20 @@ downstream/UNITER/output_train_do_calculus_ver4/
 downstream/UNITER/output_train_do_calculus_ver4_test/
 downstream/UNITER/output_train_do_calculus_ver5_fail/
 downstream/UNITER/output_train_do_calculus_ver5/
+downstream/UNITER/output_train_do_calculus_ver5-2/
 
 downstream/UNITER/output_train_do_calculus_ver2_4times/
 downstream/UNITER/output_train_do_calculus_ver2_6times/
 
 downstream/UNITER/output_train_do_calculus_2nd_not/
 downstream/UNITER/output_train_do_calculus_2nd_only_do_cal/
+downstream/UNITER/output_train_by_1st_2nd_stage/
+downstream/UNITER/output_train_by_only_2nd_stage/
+downstream/UNITER/output_train_by_1st_2nd_stage/
+downstream/UNITER/output_train_by_only_2nd_stage/
+downstream/UNITER/output_train_new_do_calculus_ver1_12p_model/
+downstream/UNITER/output_train_new_do_calculus_ver1_2p_model/
+downstream/UNITER/output_train_new_do_calculus_ver1_init_model/
 
 downstream/UNITER/version5_train.txt
 
@@ -99,6 +113,7 @@ downstream/UNITER/conf_and_prior_version0_uniter
 downstream/UNITER/conf_and_prior_version1_updown/
 downstream/UNITER/conf_and_prior_version2_uniter_total/
 downstream/UNITER/conf_and_prior_version3_uniter_embedder/
+downstream/UNITER/conf_and_prior_version4/
 
 
 # files for do-calculus
@@ -115,6 +130,7 @@ downstream/UNITER/find.py
 downstream/UNITER/nohup.out
 nohup.out
 downstream/UNITER/1.txt
+downstream/UNITER/pretrain_1_1.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks
