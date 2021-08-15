@@ -68,18 +68,28 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
             mrc_label_target = batch['label_targets']
+            ### make label for unmasked object token (for 1_2)
+            img_unmask_tgt = batch['img_unmask_tgt']
+            mrc_label_target_unmasked = batch['label_targets_unmasked']
+            ### 
             '''
             return self.forward_mrc(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
-                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-            '''
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
             return self.forward_mrc_dc(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
-                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_mrc_dc_all(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
         elif task.startswith('dc'):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
@@ -334,6 +344,57 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                 mrc_loss = F.cross_entropy(
                     prediction_soft_label, label_targets,
                     ignore_index=0, reduction='none')
+            return mrc_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_soft_label
+
+         # MRC_DC
+    def forward_mrc_dc_all(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+
+        causal_output = self.causal_v(sequence_output)
+        masked_output = self._compute_masked_hidden(causal_output, img_mask_tgt)
+        prediction_soft_label = self.causal_predictor_v(masked_output)
+
+        unmasked_output = self._compute_masked_hidden(causal_output, img_unmask_tgt)
+        prediction_soft_label_unmasked = self.causal_predictor_v(unmasked_output)
+
+        if compute_loss:
+            if "kl" in task:
+                prediction_soft_label = F.log_softmax(
+                    prediction_soft_label, dim=-1)
+                mrc_loss = F.kl_div(
+                    prediction_soft_label, label_targets, reduction='none')
+
+                prediction_soft_label_unmasked = F.log_softmax(
+                    prediction_soft_label_unmasked, dim=-1)  
+                mrc_loss_unmasked = F.kl_div(
+                    prediction_soft_label_unmasked, label_targets_unmasked, reduction='none')     
+
+                mrc_loss = torch.cat([mrc_loss, mrc_loss_unmasked], dim=0)         
+            else:
+                # background class should not be the target
+                label_targets = torch.max(label_targets[:, 1:], dim=-1)[1] + 1
+                mrc_loss = F.cross_entropy(
+                    prediction_soft_label, label_targets,
+                    ignore_index=0, reduction='none')
+
+                label_targets_unmasked = torch.max(label_targets_unmasked[:, 1:], dim=-1)[1] + 1
+                mrc_loss_unmasked = F.cross_entropy(
+                    prediction_soft_label_unmasked, label_targets_unmasked,
+                    ignore_index=0, reduction='none')
+
+                mrc_loss = torch.cat([mrc_loss, mrc_loss_unmasked], dim=0) 
+                    
             return mrc_loss #, loss_classifier, loss_causal
         else:
             return prediction_soft_label

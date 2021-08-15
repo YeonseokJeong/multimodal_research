@@ -427,16 +427,20 @@ class MrcDatasetForVCR(VcrPretrainDataset):
             example['img_fname'][0], example['img_fname'][1])
         img_mask = _get_img_mask(self.mask_prob, num_bb)
         img_mask_tgt = _get_img_tgt_mask(img_mask, len(input_ids))
+        ### make label for unmasked object token (for 1_2)
+        img_unmask = 1 - img_mask
+        img_unmask_tgt = _get_img_tgt_mask(img_unmask, len(input_ids))
+        ###
 
         attn_masks = torch.ones(len(input_ids) + num_bb, dtype=torch.long)
 
         return (input_ids, txt_type_ids, img_feat, img_pos_feat,
-                img_soft_labels, attn_masks, img_mask, img_mask_tgt)
+                img_soft_labels, attn_masks, img_mask, img_mask_tgt, img_unmask_tgt) ### make label for unmasked object token (for 1_2)
 
 
 def mrc_collate_for_vcr(inputs):
     (input_ids, txt_type_ids, img_feats, img_pos_feats, img_soft_labels,
-     attn_masks, img_masks, img_mask_tgts) = map(list, unzip(inputs))
+     attn_masks, img_masks, img_mask_tgts, img_unmask_tgts) = map(list, unzip(inputs))
     num_bbs = [f.size(0) for f in img_feats]
 
     ### use 'do-calculus' in UNITER pretrain : prepare method to extract label
@@ -448,16 +452,26 @@ def mrc_collate_for_vcr(inputs):
         input_ids, txt_type_ids, img_feats,
         img_pos_feats, attn_masks)
 
+    img_unmasks = [1-img_mask for img_mask in img_masks]        
+
     # mask features
     img_soft_label = pad_tensors(img_soft_labels, num_bbs)
     img_masks = pad_sequence(img_masks, batch_first=True, padding_value=0)
+    img_unmasks = pad_sequence(img_unmasks, batch_first=True, padding_value=0)
     label_targets = _get_targets(img_masks, img_soft_label)
+    label_targets_unmasked = _get_targets(img_unmasks, img_soft_label)
     img_mask_tgt = pad_sequence(
         img_mask_tgts, batch_first=True, padding_value=0)
+    img_unmask_tgt = pad_sequence(
+        img_unmask_tgts, batch_first=True, padding_value=0)
     batch['img_feat'] = _mask_img_feat(batch['img_feat'], img_masks)
     batch['img_masks'] = img_masks
     batch['label_targets'] = label_targets
     batch['img_mask_tgt'] = img_mask_tgt
+    ### make label for unmasked object token (for 1_2)
+    batch['label_targets_unmasked'] = label_targets_unmasked
+    batch['img_unmask_tgt'] = img_unmask_tgt
+    ### 
     ### use 'do-calculus' in UNITER pretrain : prepare method to extract label
     batch['img_soft_labels'] = img_soft_labels
     batch['txt_lens'] = txt_lens
