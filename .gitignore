@@ -65,6 +65,7 @@ downstream/UNITER/output_weight_search/
 
 downstream/UNITER/output_pretrain_1_1_united_do_calculus/
 downstream/UNITER/output_pretrain_1_2_united_do_calculus_all/
+downstream/UNITER/output_pretrain_1_3_united_do_calculus_unmasked/
 
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
@@ -94,6 +95,8 @@ downstream/UNITER/output_train_new_do_calculus_ver1_2p_model/
 downstream/UNITER/output_train_new_do_calculus_ver1_init_model/
 
 downstream/UNITER/output_train_1_1_united_do_calculus/
+downstream/UNITER/output_train_1_2_united_do_calculus_all/
+downstream/UNITER/output_train_1_3_united_do_calculus_unmasked/
 
 ### UNITER bouding box
 downstream/UNITER/bbox_set
