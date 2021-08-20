@@ -15,7 +15,7 @@ from .layer import GELU, BertOnlyMLMHead, BertImagePredictionHead
 from .model import UniterModel, UniterPreTrainedModel, UniterModelDoCalV3, UniterModelV5
 from .ot import optimal_transport_dist
 from .do_calculus import FPNPredictor, CausalPredictor_1, CausalPredictor_2, CausalPredictor_3
-from .united_do_calculus import Causal_v
+from .united_do_calculus import Causal_v, Causal_t
 
 
 class RegionFeatureRegression(nn.Module):
@@ -86,6 +86,8 @@ class UniterForPretraining(UniterPreTrainedModel):
         '''
         self.causal_v = Causal_v()
         self.causal_predictor_v = BertImagePredictionHead(config, 2048)
+
+        self.causal_t = Causal_t()
 
     def forward(self, batch, task, compute_loss=True):
         batch = defaultdict(lambda: None, batch)

@@ -32,6 +32,8 @@ class UniterForPretrainingForVCR(UniterForPretraining):
         self.uniter.embeddings.word_embeddings = new_emb
         self.cls = BertOnlyMLMHead(
             self.uniter.config, self.uniter.embeddings.word_embeddings.weight)
+        self.causal_predictor_t = BertOnlyMLMHead(self.uniter.config, self.uniter.embeddings.word_embeddings.weight)
+        
 
     def forward(self, batch, task, compute_loss=True):
         batch = defaultdict(lambda: None, batch)
@@ -47,10 +49,18 @@ class UniterForPretrainingForVCR(UniterForPretraining):
         img_soft_labels = batch['img_soft_labels']
         if task == 'mlm':
             txt_labels = batch['txt_labels']
+            causal_labels = batch['causal_labels']
+
             return self.forward_mlm(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     txt_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
+            return self.forward_mlm_dc(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
         elif task == 'mrfr':
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
@@ -72,13 +82,13 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_unmask_tgt = batch['img_unmask_tgt']
             mrc_label_target_unmasked = batch['label_targets_unmasked']
             ### 
-            '''
+            
             return self.forward_mrc(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-
+            '''
             return self.forward_mrc_dc(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
@@ -90,12 +100,13 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-            '''
+            
             return self.forward_mrc_dc_unmasked(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
         elif task.startswith('dc'):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
@@ -229,7 +240,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
         loss_classifier, loss_causal = self.do_calculus_loss(class_logits, class_logits_causal, img_pos_feat, img_soft_labels)
         ###
         '''
-    
+
         # get only the text part
         sequence_output = sequence_output[:, :input_ids.size(1), :]
         # only compute masked tokens for better efficiency
@@ -244,6 +255,54 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             return masked_lm_loss #, loss_classifier, loss_causal
         else:
             return prediction_scores
+
+    # MLM_DC
+    def forward_mlm_dc(self, input_ids, position_ids, txt_type_ids, img_feat,
+                    img_pos_feat, attention_mask, gather_index,
+                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        causal_output, masked_output_dc, prediction_scores_dc, causal_loss = 0, 0, 0, 0
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+        try:
+            # get only the text part
+            sequence_output = sequence_output[:, :input_ids.size(1), :]
+
+            # only compute masked tokens for better efficiency
+            masked_output = self._compute_masked_hidden(sequence_output, txt_labels != -1)
+            prediction_scores = self.cls(masked_output) # DeVLBert도 같은 꼬리인가?
+
+            causal_output = self.causal_t(sequence_output)
+            masked_output_dc = self._compute_masked_hidden(causal_output, causal_labels != -1)
+            # 아래 line에서 error 발생
+            if masked_output_dc.size(0) == 0:
+                prediction_scores_dc = None
+            else:
+                prediction_scores_dc = self.causal_predictor_t(masked_output_dc)
+
+
+            if compute_loss:
+                masked_lm_loss = F.cross_entropy(prediction_scores,
+                                                txt_labels[txt_labels != -1],
+                                                reduction='none')
+                if prediction_scores_dc is not None:
+                    causal_loss =  F.cross_entropy(prediction_scores_dc, causal_labels[causal_labels != -1], reduction='none')
+                    masked_lm_loss = torch.cat([masked_lm_loss, causal_loss], dim=0)
+                return masked_lm_loss #, loss_classifier, loss_causal
+            else:
+                return prediction_scores
+        except:
+            print("error!!!")
+            print("causal_output")
+            print(causal_output)
+            print("masked_output_dc")
+            print(masked_output_dc)
+            print("prediction_scores_dc")
+            print(prediction_scores_dc)
+            print("causal_loss")
+            print(causal_loss)
 
     # MRFR
     def forward_mrfr(self, input_ids, position_ids, txt_type_ids,
@@ -283,7 +342,8 @@ class UniterForPretrainingForVCR(UniterForPretraining):
     def forward_mrc(self, input_ids, position_ids, txt_type_ids,
                     img_feat, img_pos_feat,
                     attention_mask, gather_index, img_masks, img_mask_tgt,
-                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+
         sequence_output, _ = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attention_mask, gather_index,
@@ -329,7 +389,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                       output_all_encoded_layers=False,
                                       img_masks=img_masks,
                                       txt_type_ids=txt_type_ids)
-        import ipdb;ipdb.set_trace(context=10)
+
         causal_output = self.causal_v(sequence_output)
         masked_output = self._compute_masked_hidden(causal_output, img_mask_tgt)
         prediction_soft_label = self.causal_predictor_v(masked_output)

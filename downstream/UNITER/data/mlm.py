@@ -53,6 +53,55 @@ def random_word(tokens, vocab_range, mask):
 
     return tokens, output_label
 
+def random_word_dc(tokens, vocab_range, mask, noun):
+    """
+    Masking some random tokens for Language Model task with probabilities as in
+        the original BERT paper.
+    :param tokens: list of int, tokenized sentence.
+    :param vocab_range: for choosing a random word
+    :return: (list of int, list of int), masked tokens and related labels for
+        LM prediction
+    """
+    output_label = []
+    causal_label_t = []
+
+    for i, token in enumerate(tokens):
+        prob = random.random()
+        # mask token with 15% probability
+        if prob < 0.15:
+            prob /= 0.15
+
+            # 80% randomly change token to mask token
+            if prob < 0.8:
+                tokens[i] = mask
+                causal_label_t.append(-1)
+            # 10% randomly change token to random token
+            elif prob < 0.9:
+                tokens[i] = random.choice(list(range(*vocab_range)))
+                causal_label_t.append(-1)
+            # -> rest 10% randomly keep current token
+            else:
+                if token in noun:
+                    causal_label_t.append(token)
+                else:
+                    causal_label_t.append(-1)
+
+            # append current token to output (we will predict these later)
+            output_label.append(token)
+        else:
+            # no masking token (will be ignored by loss function later)
+            output_label.append(-1)
+            if token in noun:
+                causal_label_t.append(token)
+            else:
+                causal_label_t.append(-1)
+
+    if all(o == -1 for o in output_label):
+        # at least mask 1
+        output_label[0] = tokens[0]
+        tokens[0] = mask
+
+    return tokens, output_label, causal_label_t
 
 class MlmDataset(DetectFeatTxtTokDataset):
     def __init__(self, txt_db, img_db):

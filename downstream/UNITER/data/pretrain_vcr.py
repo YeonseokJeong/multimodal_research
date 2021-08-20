@@ -1,5 +1,5 @@
 from .vcr import VcrDetectFeatTxtTokDataset
-from .mlm import random_word
+from .mlm import random_word, random_word_dc
 import torch
 from toolz.sandbox import unzip
 from torch.nn.utils.rnn import pad_sequence
@@ -567,3 +567,326 @@ def dc_collate_for_vcr(inputs):
     batch['num_bbs'] = num_bbs
     ###
     return batch
+
+
+class VcrPretrainDatasetDC(VcrPretrainDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.noun = np.load("./conf_and_prior_1_mrc_from_devlbert/id2class1155.npy", allow_pickle=True).item()
+
+    def _get_input_ids(self, txt_dump, mask=False):
+        # text input
+        input_ids_q = txt_dump['input_ids']
+        type_ids_q = [0]*len(input_ids_q)
+        if mask:
+            input_ids_q, txt_labels_q, causal_labels_q = random_word_dc(
+                input_ids_q, self.txt_db.v_range,
+                self.txt_db.mask, self.noun)
+        else:
+            txt_labels_q = input_ids_q
+            causal_labels_q = input_ids_q
+
+        answer_label = txt_dump['qa_target']
+        assert answer_label >= 0, "answer_label < 0"
+
+        input_ids_a = txt_dump['input_ids_as'][answer_label]
+        type_ids_a = [2]*len(input_ids_a)
+        if mask:
+            input_ids_a, txt_labels_a, causal_labels_a = random_word_dc(
+                input_ids_a, self.txt_db.v_range,
+                self.txt_db.mask, self.noun)
+        else:
+            txt_labels_a = input_ids_a
+            causal_labels_a = input_ids_a
+
+        input_ids = input_ids_q + [self.txt_db.sep] + input_ids_a
+        type_ids = type_ids_q + [0] + type_ids_a
+        txt_labels = txt_labels_q + [-1] + txt_labels_a
+        causal_labels = causal_labels_q + [-1] + causal_labels_a # [SEP]는 명사 안에 안 들어가니까
+
+        if self.task == "qar":
+            rationale_label = txt_dump['qar_target']
+            assert rationale_label >= 0, "rationale_label < 0"
+
+            input_ids_r = txt_dump['input_ids_rs'][rationale_label]
+            type_ids_r = [3]*len(input_ids_r)
+            if mask:
+                input_ids_r, txt_labels_r, causal_labels_r = random_word_dc(
+                    input_ids_r, self.txt_db.v_range,
+                    self.txt_db.mask, self.noun)
+            else:
+                txt_labels_r = input_ids_r
+                causal_labels_r = input_ids_r
+
+            input_ids += [self.txt_db.sep] + input_ids_r
+            type_ids += [2] + type_ids_r
+            txt_labels += [-1] + txt_labels_r
+            causal_labels += [-1] + causal_labels_r
+        if mask:
+            return input_ids, type_ids, txt_labels, causal_labels
+        else:
+            return input_ids, type_ids
+
+    def combine_txt_inputs(self, input_ids, txt_type_ids, txt_labels=None):
+        input_ids = torch.tensor([self.txt_db.cls_]
+                                 + input_ids
+                                 + [self.txt_db.sep])
+        txt_type_ids = torch.tensor(
+            [txt_type_ids[0]] + txt_type_ids
+            + [txt_type_ids[-1]])
+
+        if txt_labels is not None:
+            txt_labels = torch.tensor([-1] + txt_labels + [-1])
+            return input_ids, txt_type_ids, txt_labels
+        return input_ids, txt_type_ids
+
+
+def vcr_pretrain_collate(
+        input_ids, txt_type_ids, img_feats,
+        img_pos_feats, attn_masks):
+
+    # text batches
+    txt_lens = [i.size(0) for i in input_ids]
+    input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
+    txt_type_ids = pad_sequence(txt_type_ids, batch_first=True,
+                                padding_value=0)
+    position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long
+                                ).unsqueeze(0)
+
+    # image batches
+    num_bbs = [f.size(0) for f in img_feats]
+    img_feat = pad_tensors(img_feats, num_bbs)
+    img_pos_feat = pad_tensors(img_pos_feats, num_bbs)
+
+    attn_masks = pad_sequence(attn_masks, batch_first=True, padding_value=0)
+
+    bs, max_tl = input_ids.size()
+    out_size = attn_masks.size(1)
+    gather_index = get_gather_index(txt_lens, num_bbs, bs, max_tl, out_size)
+
+    batch = {'input_ids': input_ids,
+             'txt_type_ids': txt_type_ids,
+             'position_ids': position_ids,
+             'img_feat': img_feat,
+             'img_pos_feat': img_pos_feat,
+             'attn_masks': attn_masks,
+             'gather_index': gather_index}
+    return batch
+
+class MlmDatasetForVCRDC(VcrDetectFeatTxtTokDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.noun = np.load("./conf_and_prior_1_mrc_from_devlbert/id2class1155.npy", allow_pickle=True).item()
+
+    def _get_input_ids(self, txt_dump, mask=False):
+        # text input
+        input_ids_q = txt_dump['input_ids']
+        type_ids_q = [0]*len(input_ids_q)
+        if mask:
+            input_ids_q, txt_labels_q, causal_labels_q = random_word_dc(
+                input_ids_q, self.txt_db.v_range,
+                self.txt_db.mask, self.noun)
+        else:
+            txt_labels_q = input_ids_q
+            causal_labels_q = input_ids_q
+
+        answer_label = txt_dump['qa_target']
+        assert answer_label >= 0, "answer_label < 0"
+
+        input_ids_a = txt_dump['input_ids_as'][answer_label]
+        type_ids_a = [2]*len(input_ids_a)
+        if mask:
+            input_ids_a, txt_labels_a, causal_labels_a = random_word_dc(
+                input_ids_a, self.txt_db.v_range,
+                self.txt_db.mask, self.noun)
+        else:
+            txt_labels_a = input_ids_a
+            causal_labels_a = input_ids_a
+
+        input_ids = input_ids_q + [self.txt_db.sep] + input_ids_a
+        type_ids = type_ids_q + [0] + type_ids_a
+        txt_labels = txt_labels_q + [-1] + txt_labels_a
+        causal_labels = causal_labels_q + [-1] + causal_labels_a # [SEP]는 명사 안에 안 들어가니까
+
+        if self.task == "qar":
+            rationale_label = txt_dump['qar_target']
+            assert rationale_label >= 0, "rationale_label < 0"
+
+            input_ids_r = txt_dump['input_ids_rs'][rationale_label]
+            type_ids_r = [3]*len(input_ids_r)
+            if mask:
+                input_ids_r, txt_labels_r, causal_labels_r = random_word_dc(
+                    input_ids_r, self.txt_db.v_range,
+                    self.txt_db.mask, self.noun)
+            else:
+                txt_labels_r = input_ids_r
+                causal_labels_r = input_ids_r
+
+            input_ids += [self.txt_db.sep] + input_ids_r
+            type_ids += [2] + type_ids_r
+            txt_labels += [-1] + txt_labels_r
+            causal_labels += [-1] + causal_labels_r
+        if mask:
+            return input_ids, type_ids, txt_labels, causal_labels
+        else:
+            return input_ids, type_ids
+
+    def combine_txt_inputs(self, input_ids, txt_type_ids, txt_labels=None, causal_labels=None):
+        input_ids = torch.tensor([self.txt_db.cls_]
+                                 + input_ids
+                                 + [self.txt_db.sep])
+        txt_type_ids = torch.tensor(
+            [txt_type_ids[0]] + txt_type_ids
+            + [txt_type_ids[-1]])
+
+        if txt_labels is not None:
+            txt_labels = torch.tensor([-1] + txt_labels + [-1])
+        if causal_labels is not None:
+            causal_labels = torch.tensor([-1] + causal_labels + [-1])
+            return input_ids, txt_type_ids, txt_labels, causal_labels
+
+        return input_ids, txt_type_ids
+
+    def create_mlm_io(self, example):
+        (input_ids, txt_type_ids,
+         txt_labels, causal_labels) = self._get_input_ids(example, mask=True)
+        return self.combine_txt_inputs(
+            input_ids, txt_type_ids, txt_labels, causal_labels)
+
+    def _get_img_feat_for_db(self, img_db, fname):
+        img_dump = img_db.get_dump(fname)
+        img_feat = torch.tensor(img_dump['features'])
+        bb = torch.tensor(img_dump['norm_bb'])
+        img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
+        img_soft_label = torch.tensor(img_dump['soft_labels'])
+        return img_feat, img_bb, img_soft_label
+
+    def _get_img_feat(self, fname_gt, fname):
+        if self.img_db and self.img_db_gt:
+            (img_feat_gt, img_bb_gt,
+             img_soft_label_gt) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+
+            img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
+            img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
+            img_soft_label = torch.cat(
+                [img_soft_label_gt, img_soft_label], dim=0)
+        elif self.img_db:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+        else:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+        num_bb = img_feat.size(0)
+        return img_feat, img_bb, img_soft_label, num_bb
+
+    def __getitem__(self, i):
+        example = super().__getitem__(i)
+        img_feat, img_pos_feat, img_soft_labels, num_bb = self._get_img_feat(
+            example['img_fname'][0], example['img_fname'][1])
+
+        # txt inputs, create mlm io
+        input_ids, txt_type_ids, txt_labels, causal_labels = self.create_mlm_io(example)
+
+        attn_masks = torch.ones(
+                len(input_ids) + num_bb,
+                dtype=torch.long)
+
+        return (input_ids, txt_type_ids, img_feat,
+                img_soft_labels, img_pos_feat, attn_masks, txt_labels, causal_labels)
+
+
+def mlm_collate_for_vcr_dc(inputs):
+    (input_ids, txt_type_ids, img_feats,
+     img_soft_labels, img_pos_feats, attn_masks,
+     txt_labels, causal_labels) = map(list, unzip(inputs))
+    
+    ### use 'do-calculus' in UNITER pretrain : prepare method to extract label
+    num_bbs = [f.size(0) for f in img_feats]
+    # img_soft_labels = pad_tensors(img_soft_labels, num_bbs)
+    txt_lens = [i.size(0) for i in input_ids]
+    ### 
+
+    batch = vcr_pretrain_collate(
+        input_ids, txt_type_ids, img_feats,
+        img_pos_feats, attn_masks)
+    txt_labels = pad_sequence(txt_labels, batch_first=True, padding_value=-1)
+    causal_labels = pad_sequence(causal_labels, batch_first=True, padding_value=-1)
+
+    batch['txt_labels'] = txt_labels
+    batch['causal_labels'] = causal_labels
+    ### use 'do-calculus' in UNITER pretrain : prepare method to extract label
+    batch['img_soft_labels'] = img_soft_labels
+    batch['txt_lens'] = txt_lens
+    batch['num_bbs'] = num_bbs
+    ###
+    return batch
+
+'''
+class MlmDatasetForVCR(VcrPretrainDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def create_mlm_io(self, example):
+        (input_ids, txt_type_ids,
+         txt_labels) = self._get_input_ids(example, mask=True)
+        return self.combine_txt_inputs(
+            input_ids, txt_type_ids, txt_labels)
+    
+    ### use 'do-calculus' in UNITER pretrain : prepare method to extract label
+    def _get_img_feat_for_db(self, img_db, fname):
+        img_dump = img_db.get_dump(fname)
+        img_feat = torch.tensor(img_dump['features'])
+        bb = torch.tensor(img_dump['norm_bb'])
+        img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
+        img_soft_label = torch.tensor(img_dump['soft_labels'])
+        return img_feat, img_bb, img_soft_label
+
+    def _get_img_feat(self, fname_gt, fname):
+        if self.img_db and self.img_db_gt:
+            (img_feat_gt, img_bb_gt,
+             img_soft_label_gt) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+
+            img_feat = torch.cat([img_feat_gt, img_feat], dim=0)
+            img_bb = torch.cat([img_bb_gt, img_bb], dim=0)
+            img_soft_label = torch.cat(
+                [img_soft_label_gt, img_soft_label], dim=0)
+        elif self.img_db:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db, fname)
+        else:
+            (img_feat, img_bb,
+             img_soft_label) = self._get_img_feat_for_db(
+                 self.img_db_gt, fname_gt)
+        num_bb = img_feat.size(0)
+        return img_feat, img_bb, img_soft_label, num_bb
+
+    ###
+
+    def __getitem__(self, i):
+        example = super().__getitem__(i)
+        img_feat, img_pos_feat, img_soft_labels, num_bb = self._get_img_feat(
+            example['img_fname'][0], example['img_fname'][1])
+
+        # txt inputs, create mlm io
+        input_ids, txt_type_ids, txt_labels = self.create_mlm_io(example)
+
+        attn_masks = torch.ones(
+                len(input_ids) + num_bb,
+                dtype=torch.long)
+
+        return (input_ids, txt_type_ids, img_feat,
+                img_soft_labels, img_pos_feat, attn_masks, txt_labels)
+            '''
