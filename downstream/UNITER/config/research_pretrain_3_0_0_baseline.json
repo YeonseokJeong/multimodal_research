@@ -1,7 +1,7 @@
 {
     "model_config": "config/uniter-base.json",
     "checkpoint": "vcr_data/pretrained/uniter-base.pt",
-    "output_dir": "storage/pretrain/vcr_2nd_stage_base_1_1_united_do_calculus",
+    "output_dir": "storage/pretrain/vcr_2nd_stage_base_2_1_united_do_calculus",
     "mrm_prob": 0.15,
     "max_txt_len": 220,
     "conf_th": 0.2,

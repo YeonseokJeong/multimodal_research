@@ -67,6 +67,9 @@ downstream/UNITER/output_pretrain_1_1_united_do_calculus/
 downstream/UNITER/output_pretrain_1_2_united_do_calculus_all/
 downstream/UNITER/output_pretrain_1_3_united_do_calculus_unmasked/
 downstream/UNITER/output_pretrain_2_1_united_do_calculus/
+downstream/UNITER/output_pretrain_3_0_0_baseline/
+downstream/UNITER/output_pretrain_3_0_1_mrc_do_calculus/
+downstream/UNITER/output_pretrain_3_0_2_mlm_do_calculus/
 
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
@@ -138,7 +141,8 @@ nohup.out
 downstream/UNITER/1.txt
 downstream/UNITER/pretrain_1_1.txt
 downstream/UNITER/model/pretrain_vcr_copy.py
-
+downstream/UNITER/pretain_3_0.txt
+downstream/UNITER/pretrain_3_0_1.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks

@@ -82,7 +82,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
             img_unmask_tgt = batch['img_unmask_tgt']
             mrc_label_target_unmasked = batch['label_targets_unmasked']
             ### 
-            
+            '''
             return self.forward_mrc(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
@@ -94,7 +94,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
-            
+            '''
             return self.forward_mrc_dc_all(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
@@ -381,7 +381,7 @@ class UniterForPretrainingForVCR(UniterForPretraining):
     def forward_mrc_dc(self, input_ids, position_ids, txt_type_ids,
                     img_feat, img_pos_feat,
                     attention_mask, gather_index, img_masks, img_mask_tgt,
-                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
         
         sequence_output, _ = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
