@@ -70,6 +70,15 @@ downstream/UNITER/output_pretrain_2_1_united_do_calculus/
 downstream/UNITER/output_pretrain_3_0_0_baseline/
 downstream/UNITER/output_pretrain_3_0_1_mrc_do_calculus/
 downstream/UNITER/output_pretrain_3_0_2_mlm_do_calculus/
+downstream/UNITER/output_pretrain_3_0_3_mrfr_vcfeature_regression/
+downstream/UNITER/output_pretrain_3_0_3_mrfr_vcfeature_regression_valid/
+\downstream/UNITER/output_pretrain_3_0_4_mrc_mlm_all_input_init_model/
+downstream/UNITER/output_pretrain_3_0_5_mrc_mlm_masked_input_init_model/
+
+downstream/UNITER/output_pretrain_0_0_1_mrcmlm_unmaskeddocal_initmodel/
+downstream/UNITER/output_pretrain_0_0_2_mrcmlm_alldocal_initmodel/
+downstream/UNITER/output_pretrain_0_0_3_mrcmlm_unmaskeddocal_1stdmodel/
+downstream/UNITER/output_pretrain_4_0_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
 
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
@@ -103,6 +112,14 @@ downstream/UNITER/output_train_1_2_united_do_calculus_all/
 downstream/UNITER/output_train_1_3_united_do_calculus_unmasked/
 downstream/UNITER/output_train_2_1_united_do_calculus/
 
+downstream/UNITER/output_train_3_0_0_baseline/
+downstream/UNITER/output_train_3_0_1_mrc_do_calculus/
+downstream/UNITER/output_train_3_0_2_mlm_do_calculus/
+downstream/UNITER/output_train_3_0_3_mrfr_vcfeature_regression/
+
+downstream/UNITER/output_train_0_0_1_mrcmlm_unmaskeddocal_initmodel/
+downstream/UNITER/output_train_0_0_2_mrcmlm_alldocal_initmodel/
+
 ### UNITER bouding box
 downstream/UNITER/bbox_set
 downstream/UNITER/bbox
@@ -124,6 +141,10 @@ downstream/UNITER/conf_and_prior_version2_uniter_total/
 downstream/UNITER/conf_and_prior_version3_uniter_embedder/
 downstream/UNITER/conf_and_prior_version4/
 
+downstream/UNITER/data/make_conf_prior.py
+downstream/UNITER/make_conf_prior_updown.py
+downstream/UNITER/model/make_conf_prior_updown.py
+
 
 # files for do-calculus
 dic_coco*
@@ -143,6 +164,7 @@ downstream/UNITER/pretrain_1_1.txt
 downstream/UNITER/model/pretrain_vcr_copy.py
 downstream/UNITER/pretain_3_0.txt
 downstream/UNITER/pretrain_3_0_1.txt
+downstream/UNITER/pretrain_0_0_3_unmasked_1st.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks

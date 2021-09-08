@@ -1,0 +1,1094 @@
+from torch import nn
+from .layer import BertOnlyMLMHead
+from collections import defaultdict
+from torch.nn import functional as F
+import torch
+import numpy as np
+from .do_calculus import Matcher, BoxCoder, BalancedPositiveNegativeSampler, FastRCNNLossComputation
+from horovod import torch as hvd
+from .ot import optimal_transport_dist
+from .pretrain import RegionFeatureRegression, RegionFeatureRegression, RegionClassification
+from .do_calculus import FPNPredictor, CausalPredictor_1, CausalPredictor_2, CausalPredictor_3
+from .united_do_calculus import Causal_v, Causal_t
+from .layer import GELU, BertOnlyMLMHead, BertImagePredictionHead
+from adapter.src.transformers.adapters.model_mixin import ModelWithHeadsAdaptersMixin
+from .adapter_uniter import UniterConfig, UniterPreTrainedModel, UniterModel
+
+class UniterForPretraining(UniterPreTrainedModel):
+    """ UNITER pretraining """
+    def __init__(self, config, img_dim, img_label_dim):
+        super().__init__(config)
+        self.uniter = UniterModel(config, img_dim)
+        self.cls = BertOnlyMLMHead(
+            config, self.uniter.embeddings.word_embeddings.weight)
+        ### pretrain by vc feat
+        self.feat_regress_vc = RegionFeatureRegression(
+                config.hidden_size, 1024, 
+                self.uniter.img_embeddings.vc_img_linear.weight)
+        ###
+        self.feat_regress = RegionFeatureRegression(
+            config.hidden_size, img_dim,
+            self.uniter.img_embeddings.img_linear.weight)
+        self.region_classifier = RegionClassification(
+            config.hidden_size, img_label_dim)
+        self.itm_output = nn.Linear(config.hidden_size, 2)
+        self.apply(self.init_weights)
+        ### use 'do-calculus' in UNITER pretrain 2: make method 
+        '''
+        self.predictor = FPNPredictor(config, img_dim) # use 'do-calculus' in UNITER pretrain 2 
+        self.causal_predictor_1 = CausalPredictor_1(config, img_dim) # use 'do-calculus' in UNITER pretrain 2
+        self.causal_predictor_2 = CausalPredictor_2(config, config.hidden_size)
+        self.causal_predictor_3 = CausalPredictor_3(config, img_dim)
+        self.Wx = nn.Linear(config.hidden_size, config.hidden_size)
+        
+        nn.init.normal_(self.Wx.weight, std=0.02)
+        nn.init.constant_(self.Wx.bias, 0)
+        self.causal_score = nn.Linear(2*config.hidden_size, 1601)
+        nn.init.normal_(self.causal_score.weight, std=0.01)
+        nn.init.constant_(self.causal_score.bias, 0)
+        ###
+        ### use 'do-calculus' in UNITER pretrain embedder (version 3)
+        '''
+        self.causal_v = Causal_v()
+        self.causal_predictor_v = BertImagePredictionHead(config, 2048)
+
+        self.causal_t = Causal_t()
+        self.base_model_prefix = 'uniter'
+
+    def forward(self, batch, task, compute_loss=True):
+        batch = defaultdict(lambda: None, batch)
+        input_ids = batch['input_ids']
+        position_ids = batch['position_ids']
+        img_feat = batch['img_feat']
+        img_pos_feat = batch['img_pos_feat']
+        attention_mask = batch['attn_masks']
+        gather_index = batch['gather_index']
+        if task == 'mlm':
+            txt_labels = batch['txt_labels']
+            return self.forward_mlm(input_ids, position_ids,
+                                    img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    txt_labels, compute_loss)
+        elif task == 'mrfr':
+            img_mask_tgt = batch['img_mask_tgt']
+            img_masks = batch['img_masks']
+            mrfr_feat_target = batch['feat_targets']
+            return self.forward_mrfr(input_ids, position_ids,
+                                     img_feat, img_pos_feat,
+                                     attention_mask, gather_index,
+                                     img_masks, img_mask_tgt,
+                                     mrfr_feat_target, compute_loss)
+        elif task == 'itm':
+            targets = batch['targets']
+            ot_inputs = batch['ot_inputs']
+            return self.forward_itm(input_ids, position_ids,
+                                    img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    targets, ot_inputs, compute_loss)
+        elif task.startswith('mrc'):
+            img_mask_tgt = batch['img_mask_tgt']
+            img_masks = batch['img_masks']
+            mrc_label_target = batch['label_targets']
+            return self.forward_mrc(input_ids, position_ids,
+                                    img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, task, compute_loss)
+        else:
+            raise ValueError('invalid task')
+
+    def forward_mlm(self, input_ids, position_ids, img_feat, img_pos_feat,
+                    attention_mask, gather_index,
+                    txt_labels, compute_loss=True):
+        sequence_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False)
+        # get only the text part
+        sequence_output = sequence_output[:, :input_ids.size(1), :]
+        # only compute masked tokens for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output,
+                                                    txt_labels != -1)
+        prediction_scores = self.cls(masked_output)
+
+        if compute_loss:
+            masked_lm_loss = F.cross_entropy(prediction_scores,
+                                             txt_labels[txt_labels != -1],
+                                             reduction='none')
+            return masked_lm_loss
+        else:
+            return prediction_scores
+
+    def _compute_masked_hidden(self, hidden, mask):
+        """ get only the masked region (don't compute unnecessary hiddens) """
+        mask = mask.unsqueeze(-1).expand_as(hidden)
+        hidden_masked = hidden[mask].contiguous().view(-1, hidden.size(-1))
+        return hidden_masked
+
+    def forward_mrfr(self, input_ids, position_ids, img_feat, img_pos_feat,
+                     attention_mask, gather_index, img_masks, img_mask_tgt,
+                     feat_targets, compute_loss=True):
+        sequence_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks)
+
+        # only compute masked tokens for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output,
+                                                    img_mask_tgt)
+        prediction_feat = self.feat_regress(masked_output)
+
+        if compute_loss:
+            mrfr_loss = F.mse_loss(prediction_feat, feat_targets,
+                                   reduction='none')
+            return mrfr_loss
+        else:
+            return prediction_feat
+
+    def forward_itm(self, input_ids, position_ids, img_feat, img_pos_feat,
+                    attention_mask, gather_index, targets, ot_inputs,
+                    compute_loss=True):
+        sequence_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False)
+        pooled_output = self.uniter.pooler(sequence_output)
+        itm_scores = self.itm_output(pooled_output)
+
+        # OT loss
+        if ot_inputs is not None:
+            ot_scatter = ot_inputs['ot_scatter']
+
+            b = sequence_output.size(0)
+            tl = input_ids.size(1)
+            il = img_feat.size(1)
+            max_l = max(ot_inputs['scatter_max'] + 1, tl+il)
+
+            ot_scatter = ot_scatter.unsqueeze(-1).expand_as(sequence_output)
+            ctx_emb = torch.zeros(b, max_l, self.config.hidden_size,
+                                  dtype=sequence_output.dtype,
+                                  device=sequence_output.device
+                                  ).scatter_(dim=1, index=ot_scatter,
+                                             src=sequence_output)
+            txt_emb = ctx_emb[:, :tl, :]
+            img_emb = ctx_emb[:, tl:tl+il, :]
+
+            txt_pad = ot_inputs['txt_pad']
+            img_pad = ot_inputs['img_pad']
+            # NOTE: run in fp32 for stability
+            ot_dist = optimal_transport_dist(txt_emb.float(), img_emb.float(),
+                                             txt_pad, img_pad).to(txt_emb)
+            ot_pos_dist = ot_dist.masked_select(targets == 1)
+            ot_neg_dist = ot_dist.masked_select(targets == 0)
+            ot_loss = (ot_pos_dist, ot_neg_dist)
+        else:
+            ot_loss = None
+
+        if compute_loss:
+            itm_loss = F.cross_entropy(itm_scores, targets, reduction='none')
+            return itm_loss, ot_loss
+        else:
+            return itm_scores, ot_loss
+
+    def forward_mrc(self, input_ids, position_ids, img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, task, compute_loss=True):
+        sequence_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks)
+
+        # only compute masked regions for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output,
+                                                    img_mask_tgt)
+        prediction_soft_label = self.region_classifier(masked_output)
+
+        if compute_loss:
+            if "kl" in task:
+                prediction_soft_label = F.log_softmax(
+                    prediction_soft_label, dim=-1)
+                mrc_loss = F.kl_div(
+                    prediction_soft_label, label_targets, reduction='none')
+            else:
+                # background class should not be the target
+                label_targets = torch.max(label_targets[:, 1:], dim=-1)[1] + 1
+                mrc_loss = F.cross_entropy(
+                    prediction_soft_label, label_targets,
+                    ignore_index=0, reduction='none')
+            return mrc_loss
+        else:
+            return prediction_soft_label
+
+class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPretraining):
+    """ 2nd Stage Pretrain UNITER for VCR
+    """
+    def init_type_embedding(self):
+        new_emb = nn.Embedding(4, self.uniter.config.hidden_size)
+        new_emb.apply(self.init_weights)
+        for i in [0, 1]:
+            emb = self.uniter.embeddings.token_type_embeddings.weight.data[i, :]
+            new_emb.weight.data[i, :].copy_(emb)
+        emb = self.uniter.embeddings.token_type_embeddings.weight.data[0, :]
+        new_emb.weight.data[2, :].copy_(emb)
+        new_emb.weight.data[3, :].copy_(emb)
+        self.uniter.embeddings.token_type_embeddings = new_emb
+
+    def init_word_embedding(self, num_special_tokens):
+        orig_word_num = self.uniter.embeddings.word_embeddings.weight.size(0)
+        new_emb = nn.Embedding(
+            orig_word_num + num_special_tokens, self.uniter.config.hidden_size)
+        new_emb.apply(self.init_weights)
+        emb = self.uniter.embeddings.word_embeddings.weight.data
+        new_emb.weight.data[:orig_word_num, :].copy_(emb)
+        self.uniter.embeddings.word_embeddings = new_emb
+        self.cls = BertOnlyMLMHead(
+            self.uniter.config, self.uniter.embeddings.word_embeddings.weight)
+        self.causal_predictor_t = BertOnlyMLMHead(self.uniter.config, self.uniter.embeddings.word_embeddings.weight)
+        
+
+    def forward(self, batch, task, compute_loss=True):
+        batch = defaultdict(lambda: None, batch)
+        input_ids = batch['input_ids']
+        position_ids = batch['position_ids']
+        img_feat = batch['img_feat']
+        img_pos_feat = batch['img_pos_feat']
+        attention_mask = batch['attn_masks']
+        gather_index = batch['gather_index']
+        txt_type_ids = batch['txt_type_ids']
+        txt_lens = batch['txt_lens']
+        num_bbs = batch['num_bbs']
+        img_soft_labels = batch['img_soft_labels']
+        if task == 'mlm':
+            txt_labels = batch['txt_labels']
+            causal_labels = batch['causal_labels']
+
+            return self.forward_mlm(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    txt_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
+            return self.forward_mlm_dc(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
+
+            return self.forward_mlm_dc_all(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
+
+            return self.forward_mlm_dc_unmasked(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
+
+        elif task == 'mrfr':
+            img_mask_tgt = batch['img_mask_tgt']
+            img_masks = batch['img_masks']
+            mrfr_feat_target = batch['feat_targets']
+            ### pretrain by vc_feat
+            vc_feat = batch['vc_feat']
+            mrfr_vc_feat_target = batch['vc_feat_targets']
+
+            return self.forward_mrfr(input_ids, position_ids,
+                                     txt_type_ids, img_feat, img_pos_feat,
+                                     attention_mask, gather_index,
+                                     img_masks, img_mask_tgt,
+                                     mrfr_feat_target, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
+            return self.forward_mrfr_vc(input_ids, position_ids,
+                                     txt_type_ids, img_feat, img_pos_feat,
+                                     attention_mask, gather_index,
+                                     img_masks, img_mask_tgt,
+                                     mrfr_feat_target, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
+        elif task.startswith('mrc'):
+            img_mask_tgt = batch['img_mask_tgt']
+            img_masks = batch['img_masks']
+            mrc_label_target = batch['label_targets']
+            ### make label for unmasked object token (for 1_2)
+            img_unmask_tgt = batch['img_unmask_tgt']
+            mrc_label_target_unmasked = batch['label_targets_unmasked']
+            ### 
+            '''
+            return self.forward_mrc(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
+            return self.forward_mrc_dc(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
+            return self.forward_mrc_dc_all(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_mrc_dc_unmasked(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
+        elif task.startswith('dc'):
+            img_mask_tgt = batch['img_mask_tgt']
+            img_masks = batch['img_masks']
+            mrc_label_target = batch['label_targets']
+            
+            '''
+            return self.forward_dc_1(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
+            return self.forward_dc_2(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            
+            return self.forward_dc_3(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
+            return self.forward_dc_4(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
+            return self.forward_dc_5(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            raise ValueError('dc is invalid task now')
+        else:
+            raise ValueError('invalid task')
+    
+    ### use 'do-calculus' in UNITER pretrain : make method
+    def do_calculus_1(self, sequence_output, img_feats, proposals, txt_lens, num_bbs):
+        """
+        Arguments:
+        - sequence_output : "img + txt" output
+
+        Returns:
+
+        """
+        image_uniter_outputs = []
+        img_feat_list = []
+        i = 0
+        for (output, txt_len) in zip(sequence_output, txt_lens):
+            image_uniter_output = output[txt_len:txt_len+num_bbs[i]]
+            image_uniter_outputs.append(image_uniter_output)
+            i+=1
+        for (img_feat, num_bb) in zip(img_feats, num_bbs):
+            real_img_feat = img_feat[:num_bb]
+            img_feat_list.append(real_img_feat)
+        
+        assert len(image_uniter_outputs) == len(num_bbs)
+        assert len(image_uniter_outputs) == len(img_feat_list)
+        # class_logits_list = [self.predictor(self_feature) for self_feature in image_uniter_outputs]
+        zs = [self.causal_predictor(img_feat_list[i], [num_bbs[i]]) for i in range(len(image_uniter_outputs))]
+
+        return image_uniter_outputs, zs
+
+    def do_calculus_loss_1(self, class_logits_causal_list, proposals, img_soft_labels, compute_loss):
+
+        matcher = Matcher(
+            0.7, # cfg.MODEL.ROI_HEADS.FG_IOU_THRESHOLD = 0.7
+            0.3, # cfg.MODEL.ROI_HEADS.BG_IOU_THRESHOLD = 0.3
+            allow_low_quality_matches=False,
+        )
+
+        bbox_reg_weights = (10., 10., 5., 5.) # cfg.MODEL.ROI_HEADS.BBOX_REG_WEIGHTS = (10., 10., 5., 5.)
+        box_coder = BoxCoder(weights=bbox_reg_weights)
+
+        fg_bg_sampler = BalancedPositiveNegativeSampler(
+            512, 0.25
+        )
+        # cfg = MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512
+        # cfg = MODEL.ROI_HEADS.POSITIVE_FRACTION = 0.25
+
+        cls_agnostic_bbox_reg = False # cfg.MODEL.CLS_AGNOSTIC_BBOX_REG = False
+
+        loss_evaluator = FastRCNNLossComputation(
+            matcher,
+            fg_bg_sampler,
+            box_coder,
+            cls_agnostic_bbox_reg
+        )
+        loss_causal, prediction_list = loss_evaluator(
+            class_logits_causal_list, proposals, img_soft_labels, compute_loss
+        )
+        return loss_causal, prediction_list
+
+    ###
+
+    ### use 'do-calculus' in UNITER pretrain version 2 : make method
+    def do_calculus_2(self, sequence_output, img_feats, proposals, txt_lens, num_bbs):
+
+        image_uniter_outputs = []
+
+        i = 0
+        for (output, txt_len) in zip(sequence_output, txt_lens):
+            image_uniter_output = output[txt_len:txt_len+num_bbs[i]]
+            image_uniter_outputs.append(image_uniter_output)
+            i+=1
+
+        
+        assert len(image_uniter_outputs) == len(num_bbs)
+
+        # class_logits_list = [self.predictor(self_feature) for self_feature in image_uniter_outputs]
+        zs = [self.causal_predictor_2(image_uniter_outputs[i], [num_bbs[i]]) for i in range(len(image_uniter_outputs))]
+
+        return zs
+
+    # MLM
+    def forward_mlm(self, input_ids, position_ids, txt_type_ids, img_feat,
+                    img_pos_feat, attention_mask, gather_index,
+                    txt_labels, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+        '''
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        class_logits, class_logits_causal = self.do_calculus(sequence_output, img_pos_feat, txt_lens, num_bbs)
+        loss_classifier, loss_causal = self.do_calculus_loss(class_logits, class_logits_causal, img_pos_feat, img_soft_labels)
+        ###
+        '''
+
+        # get only the text part
+        sequence_output = sequence_output[:, :input_ids.size(1), :]
+        # only compute masked tokens for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output,
+                                                    txt_labels != -1)
+        prediction_scores = self.cls(masked_output)
+
+        if compute_loss:
+            masked_lm_loss = F.cross_entropy(prediction_scores,
+                                             txt_labels[txt_labels != -1],
+                                             reduction='none')
+            return masked_lm_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_scores
+    # MLM_DC
+    def forward_mlm_dc(self, input_ids, position_ids, txt_type_ids, img_feat,
+                    img_pos_feat, attention_mask, gather_index,
+                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        causal_output, masked_output_dc, prediction_scores_dc, causal_loss = 0, 0, 0, 0
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # get only the text part
+        sequence_output = sequence_output[:, :input_ids.size(1), :]
+
+        # only compute masked tokens for better efficiency
+        # 1> masked token
+        causal_output = self.causal_t(sequence_output)
+        masked_output = self._compute_masked_hidden(causal_output, txt_labels != -1)
+        prediction_scores = self.cls(masked_output) # DeVLBert도 같은 꼬리인가?
+        '''
+        # 2> unmasked token, causal inference
+        unmasked_output_dc = self._compute_masked_hidden(causal_output, causal_labels != -1)
+        # 아래 line에서 error 발생
+
+        if unmasked_output_dc.size(0) == 0:
+            prediction_scores_dc = None
+        else:
+            prediction_scores_dc = self.causal_predictor_t(unmasked_output_dc)
+        '''
+
+
+        if compute_loss:
+            # masked_lm_loss = F.cross_entropy(prediction_scores, txt_labels[txt_labels != -1], reduction='none')
+            if prediction_scores_dc is not None:
+                masked_lm_loss = F.cross_entropy(prediction_scores, txt_labels[txt_labels != -1], reduction='none')
+
+            return masked_lm_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_scores
+
+    # MLM_DC
+    def forward_mlm_dc_all(self, input_ids, position_ids, txt_type_ids, img_feat,
+                    img_pos_feat, attention_mask, gather_index,
+                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        causal_output, masked_output_dc, prediction_scores_dc, causal_loss = 0, 0, 0, 0
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # get only the text part
+        sequence_output = sequence_output[:, :input_ids.size(1), :]
+
+        # only compute masked tokens for better efficiency
+        # 1> masked token
+        causal_output = self.causal_t(sequence_output)
+        masked_output = self._compute_masked_hidden(causal_output, txt_labels != -1)
+        prediction_scores = self.cls(masked_output) # DeVLBert도 같은 꼬리인가?
+
+        # 2> unmasked token, causal inference
+        unmasked_output_dc = self._compute_masked_hidden(causal_output, causal_labels != -1)
+        # 아래 line에서 error 발생
+        if unmasked_output_dc.size(0) == 0:
+            prediction_scores_dc = None
+        else:
+            prediction_scores_dc = self.causal_predictor_t(unmasked_output_dc)
+
+
+        if compute_loss:
+            masked_lm_loss = F.cross_entropy(prediction_scores,
+                                            txt_labels[txt_labels != -1],
+                                            reduction='none')
+            if prediction_scores_dc is not None:
+                causal_loss =  F.cross_entropy(prediction_scores_dc, causal_labels[causal_labels != -1], reduction='none')
+                masked_lm_loss = torch.cat([masked_lm_loss, causal_loss], dim=0)
+            return masked_lm_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_scores
+
+    # MLM_DC
+    def forward_mlm_dc_unmasked(self, input_ids, position_ids, txt_type_ids, img_feat,
+                    img_pos_feat, attention_mask, gather_index,
+                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        causal_output, masked_output_dc, prediction_scores_dc, causal_loss = 0, 0, 0, 0
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # get only the text part
+        sequence_output = sequence_output[:, :input_ids.size(1), :]
+
+        # only compute masked tokens for better efficiency
+        # 1> masked token, likelihood inference
+        masked_output = self._compute_masked_hidden(sequence_output, txt_labels != -1)
+        prediction_scores = self.cls(masked_output) # DeVLBert도 같은 꼬리인가?
+
+        # 2> unmasked token, causal inference
+        causal_output = self.causal_t(sequence_output)
+        unmasked_output_dc = self._compute_masked_hidden(causal_output, causal_labels != -1)
+        # 아래 line에서 error 발생
+        if unmasked_output_dc.size(0) == 0:
+            prediction_scores_dc = None
+        else:
+            prediction_scores_dc = self.causal_predictor_t(unmasked_output_dc)
+
+
+        if compute_loss:
+            masked_lm_loss = F.cross_entropy(prediction_scores,
+                                            txt_labels[txt_labels != -1],
+                                            reduction='none')
+            if prediction_scores_dc is not None:
+                causal_loss =  F.cross_entropy(prediction_scores_dc, causal_labels[causal_labels != -1], reduction='none')
+                masked_lm_loss = torch.cat([masked_lm_loss, causal_loss], dim=0)
+            return masked_lm_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_scores
+
+
+    # MRFR
+    def forward_mrfr(self, input_ids, position_ids, txt_type_ids,
+                     img_feat, img_pos_feat,
+                     attention_mask, gather_index, img_masks, img_mask_tgt,
+                     feat_targets, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        '''
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        class_logits, class_logits_causal = self.do_calculus(sequence_output, img_pos_feat, txt_lens, num_bbs)
+        loss_classifier, loss_causal = self.do_calculus_loss(class_logits, class_logits_causal, img_pos_feat, img_soft_labels)
+        ###
+        '''
+
+        # only compute masked tokens for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+
+        prediction_feat = self.feat_regress(masked_output)
+
+        if compute_loss:
+            mrfr_loss = F.mse_loss(prediction_feat, feat_targets,
+                                   reduction='none')
+            return mrfr_loss#, loss_classifier, loss_causal
+        else:
+            return prediction_feat
+
+    # MRFR
+    def forward_mrfr_vc(self, input_ids, position_ids, txt_type_ids,
+                     img_feat, img_pos_feat,
+                     attention_mask, gather_index, img_masks, img_mask_tgt,
+                     feat_targets, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        '''
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        class_logits, class_logits_causal = self.do_calculus(sequence_output, img_pos_feat, txt_lens, num_bbs)
+        loss_classifier, loss_causal = self.do_calculus_loss(class_logits, class_logits_causal, img_pos_feat, img_soft_labels)
+        ###
+        '''
+        #import ipdb;ipdb.set_trace(context=10)
+        # only compute masked tokens for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+
+        if vc_feat.shape[-1]==1024:
+            prediction_feat = self.feat_regress_vc(masked_output)
+            feat_targets = mrfr_vc_feat_target
+        else:
+            prediction_feat = self.feat_regress(masked_output)
+
+        if compute_loss:
+            mrfr_loss = F.mse_loss(prediction_feat, feat_targets,
+                                   reduction='none')
+            return mrfr_loss#, loss_classifier, loss_causal
+        else:
+            return prediction_feat
+
+    
+
+    # MRC
+    def forward_mrc(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        '''
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        class_logits, class_logits_causal = self.do_calculus(sequence_output, img_pos_feat, txt_lens, num_bbs)
+        loss_classifier, loss_causal = self.do_calculus_loss(class_logits, class_logits_causal, img_pos_feat, img_soft_labels)
+        ###
+        '''
+
+        # only compute masked regions for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output,
+                                                    img_mask_tgt)
+        prediction_soft_label = self.region_classifier(masked_output)
+
+        if compute_loss:
+            if "kl" in task:
+                prediction_soft_label = F.log_softmax(
+                    prediction_soft_label, dim=-1)
+                mrc_loss = F.kl_div(
+                    prediction_soft_label, label_targets, reduction='none')
+            else:
+                # background class should not be the target
+                label_targets = torch.max(label_targets[:, 1:], dim=-1)[1] + 1
+                mrc_loss = F.cross_entropy(
+                    prediction_soft_label, label_targets,
+                    ignore_index=0, reduction='none')
+            return mrc_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_soft_label
+     # MRC_DC
+    def forward_mrc_dc(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        # 1> masked object, causal inference
+        causal_output = self.causal_v(sequence_output)
+        masked_output = self._compute_masked_hidden(causal_output, img_mask_tgt)
+        prediction_soft_label = self.causal_predictor_v(masked_output)
+        '''
+        # only compute masked regions for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+        prediction_soft_label = self.region_classifier(masked_output)
+        '''
+        if compute_loss:
+            if "kl" in task:
+                prediction_soft_label = F.log_softmax(
+                    prediction_soft_label, dim=-1)
+                mrc_loss = F.kl_div(
+                    prediction_soft_label, label_targets, reduction='none')
+            else:
+                # background class should not be the target
+                label_targets = torch.max(label_targets[:, 1:], dim=-1)[1] + 1
+                mrc_loss = F.cross_entropy(
+                    prediction_soft_label, label_targets,
+                    ignore_index=0, reduction='none')
+            return mrc_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_soft_label
+
+    # MRC_DC
+    def forward_mrc_dc_all(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        # 1> masked object, causal inference
+        causal_output = self.causal_v(sequence_output)
+        masked_output = self._compute_masked_hidden(causal_output, img_mask_tgt)
+        prediction_soft_label = self.causal_predictor_v(masked_output)
+        # 2> unmasked object, causal inference
+        unmasked_output = self._compute_masked_hidden(causal_output, img_unmask_tgt)
+        prediction_soft_label_unmasked = self.causal_predictor_v(unmasked_output)
+
+        if compute_loss:
+            if "kl" in task:
+                prediction_soft_label = F.log_softmax(
+                    prediction_soft_label, dim=-1)
+                mrc_loss = F.kl_div(
+                    prediction_soft_label, label_targets, reduction='none')
+
+                prediction_soft_label_unmasked = F.log_softmax(
+                    prediction_soft_label_unmasked, dim=-1)  
+                mrc_loss_unmasked = F.kl_div(
+                    prediction_soft_label_unmasked, label_targets_unmasked, reduction='none')     
+
+                mrc_loss = torch.cat([mrc_loss, mrc_loss_unmasked], dim=0)         
+            else:
+                # background class should not be the target
+                label_targets = torch.max(label_targets[:, 1:], dim=-1)[1] + 1
+                mrc_loss = F.cross_entropy(
+                    prediction_soft_label, label_targets,
+                    ignore_index=0, reduction='none')
+
+                label_targets_unmasked = torch.max(label_targets_unmasked[:, 1:], dim=-1)[1] + 1
+                mrc_loss_unmasked = F.cross_entropy(
+                    prediction_soft_label_unmasked, label_targets_unmasked,
+                    ignore_index=0, reduction='none')
+
+                mrc_loss = torch.cat([mrc_loss, mrc_loss_unmasked], dim=0) 
+                    
+            return mrc_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_soft_label
+
+    def forward_mrc_dc_unmasked(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        # 1> masked object, likelihood inference
+        masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+        prediction_soft_label = self.region_classifier(masked_output)       
+
+        # 2> unmasked object, causal inference
+        causal_output = self.causal_v(sequence_output)
+        unmasked_output = self._compute_masked_hidden(causal_output, img_unmask_tgt)
+        prediction_soft_label_unmasked = self.causal_predictor_v(unmasked_output)
+
+        if compute_loss:
+            if "kl" in task:
+                '''prediction_soft_label = F.log_softmax(
+                    prediction_soft_label, dim=-1)
+                mrc_loss = F.kl_div(
+                    prediction_soft_label, label_targets, reduction='none')'''
+
+                prediction_soft_label_unmasked = F.log_softmax(
+                    prediction_soft_label_unmasked, dim=-1)  
+                mrc_loss_unmasked = F.kl_div(
+                    prediction_soft_label_unmasked, label_targets_unmasked, reduction='none')     
+
+                mrc_loss = mrc_loss_unmasked    
+            else:
+                # background class should not be the target
+                '''label_targets = torch.max(label_targets[:, 1:], dim=-1)[1] + 1
+                mrc_loss = F.cross_entropy(
+                    prediction_soft_label, label_targets,
+                    ignore_index=0, reduction='none')'''
+
+                label_targets_unmasked = torch.max(label_targets_unmasked[:, 1:], dim=-1)[1] + 1
+                mrc_loss_unmasked = F.cross_entropy(
+                    prediction_soft_label_unmasked, label_targets_unmasked,
+                    ignore_index=0, reduction='none')
+
+                mrc_loss = mrc_loss_unmasked 
+                    
+            return mrc_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_soft_label
+    # DC 1 (Do-Calculus 1)
+    def forward_dc_1(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        device = img_pos_feat.device
+        image_uniter_outputs, zs = self.do_calculus(sequence_output, img_feat, img_pos_feat, txt_lens, num_bbs)
+        
+        batch_zs = pad_tensors(zs, num_bbs).to(device)
+        attention_mask_list, gather_index_list = [], []
+        for i in range(input_ids.size(0)):
+            attention_mask_list.append(attention_mask[i][txt_lens[i]:])
+            #gather_index_list.append(gather_index[i][txt_lens[i]:])
+        #attention_mask = attention_mask[:, input_ids.size(1):]
+        #gather_index = gather_index[:, input_ids.size(1):]
+     
+        attention_mask = pad_tensors(attention_mask_list, num_bbs).to(device)
+        # gather_index = pad_tensors(gather_index_list, num_bbs).to(device)
+        gather_index = gather_index[:, input_ids.size(1)]
+        zs_output, _ = self.uniter(None, position_ids,
+                                      batch_zs, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+        causal_logits_list = []
+        yzs = []
+        i = 0
+        # 밑에서 일렬로 쫙 펴버리자, 그러면서 label도 펴버리자, 그리고 한 번에 loss를 계산하자
+        for (uniter_output, z_output) in zip(image_uniter_outputs, zs_output):
+            z = z_output[:num_bbs[i]]
+            i += 1
+            assert len(uniter_output) == len(z)
+            length = len(uniter_output)
+            yz = torch.cat((self.Wx(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*self.Wx(uniter_output).size(1))
+            yzs.append(yz)
+            causal_logits_list.append(self.causal_score(yz))
+        
+            
+
+        if compute_loss:
+            loss_causal = self.do_calculus_loss(causal_logits_list, img_pos_feat, img_soft_labels, compute_loss)
+            return loss_causal
+        else:
+            prediction_soft_label = self.do_calculus_loss(causal_logits_list, img_pos_feat, img_soft_labels, compute_loss)
+            return prediction_soft_label
+        ###
+
+    # DC 2 (Do-Calculus 2)
+    def forward_dc_2(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        sequence_output, _ = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # 
+        # sequence_img_output = sequence_output[:, input_ids.size(1):, :]; import ipdb;ipdb.set_trace(context=10)
+        sequence_img_output = []
+        for i, sequence in enumerate(sequence_output):
+            sequence_img_output.append(sequence[txt_lens[i]:, :])
+        class_logits_causal_list = self.causal_predictor_2(sequence_img_output, num_bbs)
+
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        device = img_pos_feat.device
+        
+
+        # batch_zs = pad_tensors(zs, num_bbs).to(device)
+        '''
+        attention_mask_list, gather_index_list = [], []
+        for i in range(input_ids.size(0)):
+            attention_mask_list.append(attention_mask[i][txt_lens[i]:])
+            #gather_index_list.append(gather_index[i][txt_lens[i]:])
+        #attention_mask = attention_mask[:, input_ids.size(1):]
+        #gather_index = gather_index[:, input_ids.size(1):]
+     
+        attention_mask = pad_tensors(attention_mask_list, num_bbs).to(device)
+        # gather_index = pad_tensors(gather_index_list, num_bbs).to(device)
+        gather_index = gather_index[:, input_ids.size(1)]
+        zs_output = self.uniter(None, position_ids,
+                                      batch_zs, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+        causal_logits_list = []
+        yzs = []
+        i = 0
+        # 밑에서 일렬로 쫙 펴버리자, 그러면서 label도 펴버리자, 그리고 한 번에 loss를 계산하자
+        for (uniter_output, z_output) in zip(image_uniter_outputs, zs_output):
+            z = z_output[:num_bbs[i]]
+            i += 1
+            assert len(uniter_output) == len(z)
+            length = len(uniter_output)
+            yz = torch.cat((self.Wx_1(uniter_output).unsqueeze(1).repeat(1, length, 1), z.unsqueeze(0).repeat(length, 1, 1)), 2).view(-1, 2*self.Wx(uniter_output).size(1))
+            yzs.append(yz)
+            causal_logits_list.append(self.causal_score(yz))
+        
+            
+
+        if compute_loss:
+            loss_causal = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, compute_loss)
+            return loss_causal
+        else:
+            prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, compute_loss)
+            return prediction_soft_label
+        '''
+        loss_causal = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, True)
+        prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, False)
+        return loss_causal, prediction_soft_label
+        ###
+    # DC 3 (Do-Calculus 3)
+    def forward_dc_3(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        _, embedding_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # 
+        # sequence_img_output = sequence_output[:, input_ids.size(1):, :]; import ipdb;ipdb.set_trace(context=10)
+        img_emb_list = []
+        for i, sequence in enumerate(embedding_output):
+            img_emb_list.append(sequence[txt_lens[i]:, :])
+        class_logits_causal_list, label_list = self.causal_predictor_2(img_emb_list, num_bbs, img_soft_labels)
+
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        device = img_pos_feat.device
+        
+
+        # batch_zs = pad_tensors(zs, num_bbs).to(device)
+        '''
+        if compute_loss:
+            loss_causal = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, compute_loss)
+            return loss_causal
+        else:
+            prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, compute_loss)
+            return prediction_soft_label'''
+        ###
+        loss_causal, prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, True)
+
+        return loss_causal, prediction_soft_label, label_list
+
+    # DC 4 (Do-Calculus 4 : confounder linear transformation)
+    def forward_dc_4(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        
+        _, embedding_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # 
+        # sequence_img_output = sequence_output[:, input_ids.size(1):, :]; import ipdb;ipdb.set_trace(context=10)
+        img_emb_list = []
+        for i, sequence in enumerate(embedding_output):
+            img_emb_list.append(sequence[txt_lens[i]:, :])
+        class_logits_causal_list, label_list = self.causal_predictor_3(img_emb_list, num_bbs, img_soft_labels)
+
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        device = img_pos_feat.device
+        
+
+        loss_causal, prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, True)
+
+        return loss_causal, prediction_soft_label, label_list
+
+    # DC 5 (Do-Calculus 5 : )
+    def forward_dc_5(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+
+        _, embedding_output = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
+
+        # 
+        # sequence_img_output = sequence_output[:, input_ids.size(1):, :]; import ipdb;ipdb.set_trace(context=10)
+        img_emb_list = []
+        for i, sequence in enumerate(embedding_output):
+            img_emb_list.append(sequence[txt_lens[i]:, :])
+        device = torch.device("cuda", hvd.local_rank())
+        self.causal_predictor_3.to(device)
+        class_logits_causal_list, label_list = self.causal_predictor_3(img_emb_list, num_bbs, img_soft_labels)
+
+        ### use 'do-calculus' in UNITER pretrain : compute loss
+        
+
+        loss_causal, prediction_soft_label = self.do_calculus_loss_1(class_logits_causal_list, img_pos_feat, img_soft_labels, True)
+
+        return loss_causal, prediction_soft_label, label_list
+
+def cat(tensors, dim=0):
+    """
+    Efficient version of torch.cat that avoids a copy if there is only a single element in a list
+    """
+    assert isinstance(tensors, (list, tuple))
+    if len(tensors) == 1:
+        return tensors[0]
+    return torch.cat(tensors, dim)
+
+def pad_tensors(tensors, lens=None, pad=0):
+    """B x [T, ...]"""
+    if lens is None:
+        pass
+    max_len = max(lens)
+    bs = len(tensors)
+    hid = tensors[0].size(-1)
+    dtype = tensors[0].dtype
+    output = torch.zeros(bs, max_len, hid, dtype=dtype)
+    if pad:
+        output.data.fill_(pad)
+    if len(tensors[0].shape) > 1:
+        for i, (t, l) in enumerate(zip(tensors, lens)):
+            output.data[i, :l, ...] = t.data
+    else:
+        lens = [tensors[i].size(0) for i in range(len(tensors))]
+        # max_len = max(lens)
+        output = torch.zeros(bs, max_len, dtype=dtype)
+        for i, (t, l) in enumerate(zip(tensors, lens)):
+            if l > max_len:
+                l = max_len
+            output.data[i, :l] = t.data[:l]
+    return output

@@ -186,6 +186,7 @@ class UniterPreTrainedModel(nn.Module):
             state_dict._metadata = metadata
 
         def load(module, prefix=''):
+            import ipdb;ipdb.set_trace(context=10)
             local_metadata = ({} if metadata is None
                               else metadata.get(prefix[:-1], {}))
             module._load_from_state_dict(

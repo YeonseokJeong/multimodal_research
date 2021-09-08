@@ -283,7 +283,7 @@ class MrfrDatasetForVCR(VcrPretrainDataset):
             if vc_feat.shape[0]!=img_feat.shape[0]:
                 print('warning')
             #assert vc_feat.shape[0]==img_feat.shape[0]
-            print('error data')
+            # print('error data')
         except:
           #import ipdb;ipdb.set_trace(context=10)
             #vc_name = '.'.join('_'.join(example['img_fname'][1].split('_')[2:]).split('.')[:-1])+".jpg.npy"
