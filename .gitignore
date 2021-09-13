@@ -78,7 +78,7 @@ downstream/UNITER/output_pretrain_3_0_5_mrc_mlm_masked_input_init_model/
 downstream/UNITER/output_pretrain_0_0_1_mrcmlm_unmaskeddocal_initmodel/
 downstream/UNITER/output_pretrain_0_0_2_mrcmlm_alldocal_initmodel/
 downstream/UNITER/output_pretrain_0_0_3_mrcmlm_unmaskeddocal_1stdmodel/
-downstream/UNITER/output_pretrain_4_0_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
 
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
@@ -120,7 +120,7 @@ downstream/UNITER/output_train_3_0_3_mrfr_vcfeature_regression/
 downstream/UNITER/output_train_0_0_1_mrcmlm_unmaskeddocal_initmodel/
 downstream/UNITER/output_train_0_0_2_mrcmlm_alldocal_initmodel/
 downstream/UNITER/output_train_0_0_3_mrcmlm_maskeddocal_initmodel/
-downstream/UNITER/output_train_4_0_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_1_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
 
 
 ### UNITER bouding box
