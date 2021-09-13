@@ -25,7 +25,7 @@ from data import (TokenBucketSampler, PrefetchLoader, DetectFeatLmdb,
                   VcrTxtTokLmdb, ImageLmdbGroup, ConcatDatasetWithLens,
                   VcrDataset, VcrEvalDataset,
                   vcr_collate, vcr_eval_collate,)
-from model.vcr import UniterForVisualCommonsenseReasoning
+from model.adapter_vcr import UniterAdapterForVisualCommonsenseReasoning
 from optim import AdamW, get_lr_sched
 
 from utils.logger import LOGGER, TB_LOGGER, RunningMeter, add_log_to_file
@@ -34,6 +34,8 @@ from utils.distributed import (all_reduce_and_rescale_tensors, all_gather_list,
 from utils.save import ModelSaver, save_training_meta
 from utils.misc import NoOp, parse_with_config, set_dropout, set_random_seed
 from utils.const import BUCKET_SIZE, IMG_DIM
+from adapter.src.transformers.adapters.configuration import AdapterConfig
+
 NUM_SPECIAL_TOKENS = 81
 
 
@@ -172,11 +174,16 @@ def main(opts):
     all_dbs = opts.train_txt_dbs + [opts.val_txt_db]
     toker = json.load(open(f'{all_dbs[0]}/meta.json'))['bert']
     assert all(toker == json.load(open(f'{db}/meta.json'))['bert']
-               for db in all_dbs)
-    model = UniterForVisualCommonsenseReasoning.from_pretrained(
+               for db in all_dbs);import ipdb;ipdb.set_trace(context=10)
+    model = UniterAdapterForVisualCommonsenseReasoning.from_pretrained(
         opts.model_config, checkpoint, img_dim=IMG_DIM)
     model.init_type_embedding()
     model.init_word_embedding(NUM_SPECIAL_TOKENS)
+    ### for adapter
+    adapter_config = AdapterConfig.load('pfeiffer', non_linearity=None, reduction_factor=None)
+    model.add_adapter("squad", config = adapter_config)
+    model.train_adapter(["squad"])
+    ###
     if opts.checkpoint_from == "vcr_pretrain":
         checkpoint = torch.load(opts.checkpoint)
         state_dict = checkpoint.get('model_state', checkpoint)
@@ -195,6 +202,8 @@ def main(opts):
         print("Missing_keys:", list(missing_keys))
         model.load_state_dict(matched_state_dict, strict=False)
     del checkpoint
+
+
     model.to(device)
     # make sure every process has same model parameters in the beginning
     broadcast_tensors([p.data for p in model.parameters()], 0)
@@ -231,6 +240,7 @@ def main(opts):
     # quick hack for amp delay_unscale bug
     optimizer.zero_grad()
     optimizer.step()#;import ipdb;ipdb.set_trace(context=10)
+
     while True:
         for step, batch in enumerate(train_dataloader):
             n_examples += batch['input_ids'].size(0)

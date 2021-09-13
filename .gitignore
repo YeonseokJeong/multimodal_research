@@ -119,6 +119,9 @@ downstream/UNITER/output_train_3_0_3_mrfr_vcfeature_regression/
 
 downstream/UNITER/output_train_0_0_1_mrcmlm_unmaskeddocal_initmodel/
 downstream/UNITER/output_train_0_0_2_mrcmlm_alldocal_initmodel/
+downstream/UNITER/output_train_0_0_3_mrcmlm_maskeddocal_initmodel/
+downstream/UNITER/output_train_4_0_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
+
 
 ### UNITER bouding box
 downstream/UNITER/bbox_set
