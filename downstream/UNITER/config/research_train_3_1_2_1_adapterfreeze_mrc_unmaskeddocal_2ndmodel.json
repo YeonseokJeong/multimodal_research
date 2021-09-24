@@ -3,7 +3,7 @@
     "train_img_dbs": ["./vcr_data/img_db/vcr_gt_train/;./vcr_data/img_db/vcr_train/"],
     "val_txt_db": "./vcr_data/txt_db/vcr_val.db/",
     "val_img_db": "./vcr_data/img_db/vcr_gt_val/;./vcr_data/img_db/vcr_val/",
-    "checkpoint": "output_pretrain_3_1_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/ckpt/model_step_45000.pt",
+    "checkpoint": "output_pretrain_3_1_2_1_adapterfreeze_mrc_unmaskeddocal_2ndmodel/ckpt/model_step_45000.pt",
     "checkpoint_from": "vcr_pretrain",
     "model_config": "./config/uniter-base.json",
     "output_dir": "/workspace/vcr/default",

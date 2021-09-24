@@ -193,7 +193,7 @@ class UniterModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
     def train_adapter(self, adapter_setup: Union[list, AdapterCompositionBlock]):
         """Sets the model into mode for training the given adapters."""
         self.train()
-        self.freeze_model(False)
+        self.freeze_model(False) # True/False
         adapter_setup = parse_composition(adapter_setup)
         self.encoder.enable_adapters(adapter_setup, True, False)
         self.enable_invertible_adapters(adapter_setup.flatten())
@@ -524,4 +524,3 @@ class UniterModel(UniterModelAdaptersMixin, UniterPreTrainedModel):
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
         return encoded_layers, None
-

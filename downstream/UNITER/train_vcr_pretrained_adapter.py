@@ -174,7 +174,7 @@ def main(opts):
     all_dbs = opts.train_txt_dbs + [opts.val_txt_db]
     toker = json.load(open(f'{all_dbs[0]}/meta.json'))['bert']
     assert all(toker == json.load(open(f'{db}/meta.json'))['bert']
-               for db in all_dbs);import ipdb;ipdb.set_trace(context=10)
+               for db in all_dbs)
     model = UniterAdapterForVisualCommonsenseReasoning.from_pretrained(
         opts.model_config, checkpoint, img_dim=IMG_DIM)
     model.init_type_embedding()
@@ -183,6 +183,7 @@ def main(opts):
     adapter_config = AdapterConfig.load('pfeiffer', non_linearity=None, reduction_factor=None)
     model.add_adapter("squad", config = adapter_config)
     model.train_adapter(["squad"])
+    # print(model.uniter.encoder.layer[11].output.adapters.squad.adapter_up.weight[0][:10])
     ###
     if opts.checkpoint_from == "vcr_pretrain":
         checkpoint = torch.load(opts.checkpoint)
@@ -202,7 +203,7 @@ def main(opts):
         print("Missing_keys:", list(missing_keys))
         model.load_state_dict(matched_state_dict, strict=False)
     del checkpoint
-
+    
 
     model.to(device)
     # make sure every process has same model parameters in the beginning

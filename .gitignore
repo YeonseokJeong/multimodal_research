@@ -79,6 +79,10 @@ downstream/UNITER/output_pretrain_0_0_1_mrcmlm_unmaskeddocal_initmodel/
 downstream/UNITER/output_pretrain_0_0_2_mrcmlm_alldocal_initmodel/
 downstream/UNITER/output_pretrain_0_0_3_mrcmlm_unmaskeddocal_1stdmodel/
 downstream/UNITER/output_pretrain_3_1_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_2_adapter_mrc_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_1_1_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_2_1_adapterfreeze_mrc_unmaskeddocal_2ndmodel/
+
 
 ### UNITER finetune output
 downstream/UNITER/failed_finetune_ouput
@@ -121,6 +125,19 @@ downstream/UNITER/output_train_0_0_1_mrcmlm_unmaskeddocal_initmodel/
 downstream/UNITER/output_train_0_0_2_mrcmlm_alldocal_initmodel/
 downstream/UNITER/output_train_0_0_3_mrcmlm_maskeddocal_initmodel/
 downstream/UNITER/output_train_3_1_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_1_2_adapter_mrc_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_1_1_1_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_1_2_1_adapterfreeze_mrc_unmaskeddocal_2ndmodel/
+
+## 삭제할 파일들
+downstream/UNITER/output_adpatertune_3_1_1_1_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_1_1_adapterfreeze_mrcmlm_test/
+downstream/UNITER/output_pretrain_3_1_1_1_fail2adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_1_1_failadapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_2_1_adapterfreeze_mrc_test/
+downstream/UNITER/output_train_3_1_1_1_fail2adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_1_1_1_failadapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_1_2_1fail_adapterfreeze_mrc_unmaskeddocal_2ndmodel/
 
 
 ### UNITER bouding box
@@ -168,6 +185,7 @@ downstream/UNITER/model/pretrain_vcr_copy.py
 downstream/UNITER/pretain_3_0.txt
 downstream/UNITER/pretrain_3_0_1.txt
 downstream/UNITER/pretrain_0_0_3_unmasked_1st.txt
+downstream/UNITER/train_3_1_1_1.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks

@@ -50,12 +50,12 @@ class UniterForPretrainingForVCR(UniterForPretraining):
         if task == 'mlm':
             txt_labels = batch['txt_labels']
             causal_labels = batch['causal_labels']
-
+            '''
             return self.forward_mlm(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     txt_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
-            '''
+
             return self.forward_mlm_dc(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
@@ -65,12 +65,11 @@ class UniterForPretrainingForVCR(UniterForPretraining):
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
-
+            '''
             return self.forward_mlm_dc_unmasked(input_ids, position_ids,
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
-            '''
 
         elif task == 'mrfr':
             img_mask_tgt = batch['img_mask_tgt']

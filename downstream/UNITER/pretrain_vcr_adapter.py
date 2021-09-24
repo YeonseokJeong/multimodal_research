@@ -269,6 +269,7 @@ def main(opts):
     print("Unexpected_keys:", list(unexpected_keys))
     print("Missing_keys:", list(missing_keys))
     model.load_state_dict(matched_state_dict, strict=False)
+    ###
 
     ### for adapter
     adapter_config = AdapterConfig.load('pfeiffer', non_linearity=None, reduction_factor=None)
