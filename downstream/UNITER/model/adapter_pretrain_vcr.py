@@ -292,7 +292,7 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
             ### pretrain by vc_feat
             vc_feat = batch['vc_feat']
             mrfr_vc_feat_target = batch['vc_feat_targets']
-
+            '''
             return self.forward_mrfr(input_ids, position_ids,
                                      txt_type_ids, img_feat, img_pos_feat,
                                      attention_mask, gather_index,
@@ -304,7 +304,7 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
                                      attention_mask, gather_index,
                                      img_masks, img_mask_tgt,
                                      mrfr_feat_target, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss)
-            '''
+
         elif task.startswith('mrc'):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']

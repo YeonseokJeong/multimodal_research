@@ -517,7 +517,7 @@ class UniterModel(UniterModelAdaptersMixin, UniterPreTrainedModel):
                 input_ids, position_ids,
                 img_feat, img_pos_feat,
                 gather_index, img_masks, txt_type_ids, img_type_ids)
-
+        import ipdb;ipdb.set_trace(context=10)
         encoded_layers = self.encoder(
             embedding_output, extended_attention_mask,
             output_all_encoded_layers=output_all_encoded_layers)

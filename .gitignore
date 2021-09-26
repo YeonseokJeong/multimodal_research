@@ -82,6 +82,7 @@ downstream/UNITER/output_pretrain_3_1_1_adapter_mrcmlm_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_pretrain_3_1_2_adapter_mrc_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_pretrain_3_1_1_1_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_pretrain_3_1_2_1_adapterfreeze_mrc_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_1_3_1_adapterfreeze_mrcmlmmrfr_unmaskeddocal_2ndmodel/
 
 
 ### UNITER finetune output
