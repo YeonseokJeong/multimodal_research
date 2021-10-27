@@ -174,6 +174,9 @@ def create_dataloaders(datasets, is_train, opts, all_img_dbs=None):
                 elif task.startswith('mrc'):
                     dataset = build_mrc_dataset(
                         txt_db, img_db_gt, img_db, is_train, opts)
+                elif task.startswith('ortho'):
+                    dataset = build_mrc_dataset(
+                        txt_db, img_db_gt, img_db, is_train, opts)
                 elif task.startswith('dc'):
                     dataset = build_dc_dataset(
                         txt_db, img_db_gt, img_db, is_train, opts)
@@ -272,6 +275,7 @@ def main(opts):
     ###
 
     ### for adapter
+    # import ipdb;ipdb.set_trace(context=10)
     adapter_config = AdapterConfig.load('pfeiffer', non_linearity=None, reduction_factor=None)
     model.add_adapter("squad", config = adapter_config)
     model.train_adapter(["squad"])
@@ -393,6 +397,7 @@ def main(opts):
                 if global_step >= opts.num_train_steps:
                     break
             except:
+                import ipdb;ipdb.set_trace(context=10)
                 print("internal loop")
                 print("step")
                 print(step)
@@ -423,6 +428,8 @@ def validate(model, val_dataloaders):
             val_log = validate_mrfr(model, loader)
         elif task.startswith('mrc'):
             val_log = validate_mrc(model, loader, task)
+        elif task.startswith('ortho'):
+            val_log = validate_ortho(model, loader, task)
         elif task.startswith('dc'):
             '''
             try:
@@ -553,6 +560,20 @@ def validate_mrc(model, val_loader, task):
     LOGGER.info(f"validation finished in {int(tot_time)} seconds, "
                 f"score: {val_acc*100:.2f}")
     return val_log
+
+@torch.no_grad()
+def validate_ortho(model, val_loader, task):
+    LOGGER.info("start running MRC validation...")
+    val_loss = 0
+    n_feat = 0
+    st = time()
+    tot_score = 0
+    for i, batch in enumerate(val_loader):
+        prediction_soft_label = model(
+            batch, task=task, compute_loss=False)
+        print(prediction_soft_label)
+    return None
+
 
 @torch.no_grad()
 def validate_dc(model, val_loader):

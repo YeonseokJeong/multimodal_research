@@ -64,7 +64,7 @@ class UniterAdapterForVisualCommonsenseReasoning(ModelWithHeadsAdaptersMixin, Un
         gather_index = batch['gather_index']
         txt_type_ids = batch['txt_type_ids']
 
-        sequence_output, _ = self.uniter(input_ids, position_ids,
+        sequence_output, _, _ = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attn_masks, gather_index,
                                       output_all_encoded_layers=False,

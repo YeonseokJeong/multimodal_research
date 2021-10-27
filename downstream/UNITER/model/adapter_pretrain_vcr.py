@@ -283,7 +283,12 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
                                     txt_type_ids, img_feat, img_pos_feat,
                                     attention_mask, gather_index,
                                     txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
-            
+            '''
+            return self.forward_mlm_dc_unmasked_orthogonal(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
 
         elif task == 'mrfr':
             img_mask_tgt = batch['img_mask_tgt']
@@ -304,7 +309,13 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
                                      attention_mask, gather_index,
                                      img_masks, img_mask_tgt,
                                      mrfr_feat_target, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss)
-
+            '''
+            return self.forward_mrfr_vc_orthogonal(input_ids, position_ids,
+                                     txt_type_ids, img_feat, img_pos_feat,
+                                     attention_mask, gather_index,
+                                     img_masks, img_mask_tgt,
+                                     mrfr_feat_target, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss)
+            '''
         elif task.startswith('mrc'):
             img_mask_tgt = batch['img_mask_tgt']
             img_masks = batch['img_masks']
@@ -337,6 +348,33 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
                                     attention_mask, gather_index,
                                     img_masks, img_mask_tgt,
                                     mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_mrc_dc_unmasked_orthogonal(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+        elif task.startswith('ortho'):
+            img_mask_tgt = batch['img_mask_tgt']
+            img_masks = batch['img_masks']
+            mrc_label_target = batch['label_targets']
+            ### make label for unmasked object token (for 1_2)
+            img_unmask_tgt = batch['img_unmask_tgt']
+            mrc_label_target_unmasked = batch['label_targets_unmasked']
+            '''
+            return self.forward_orthogonal(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+            '''
+            return self.forward_orthogonal_causal_confounder(input_ids, position_ids,
+                                    txt_type_ids, img_feat, img_pos_feat,
+                                    attention_mask, gather_index,
+                                    img_masks, img_mask_tgt,
+                                    mrc_label_target, img_unmask_tgt, mrc_label_target_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss)
+
 
         elif task.startswith('dc'):
             img_mask_tgt = batch['img_mask_tgt']
@@ -571,7 +609,7 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
                     img_pos_feat, attention_mask, gather_index,
                     txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
         causal_output, masked_output_dc, prediction_scores_dc, causal_loss = 0, 0, 0, 0
-        sequence_output, _ = self.uniter(input_ids, position_ids,
+        sequence_output, _, _ = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attention_mask, gather_index,
                                       output_all_encoded_layers=False,
@@ -605,14 +643,66 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
             return masked_lm_loss #, loss_classifier, loss_causal
         else:
             return prediction_scores
+    # MLM_DC
+    def forward_mlm_dc_unmasked_orthogonal(self, input_ids, position_ids, txt_type_ids, img_feat,
+                    img_pos_feat, attention_mask, gather_index,
+                    txt_labels, causal_labels, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+        causal_output, masked_output_dc, prediction_scores_dc, causal_loss = 0, 0, 0, 0
+        sequence_output, _, two_type_outputs = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      txt_type_ids=txt_type_ids)
 
+        # get only the text part
+        sequence_output = sequence_output[:, :input_ids.size(1), :]
+
+        # only compute masked tokens for better efficiency
+        # 1> masked token, likelihood inference
+        masked_output = self._compute_masked_hidden(sequence_output, txt_labels != -1)
+        prediction_scores = self.cls(masked_output) # DeVLBert도 같은 꼬리인가?
+
+        # 2> unmasked token, causal inference
+        causal_output = self.causal_t(sequence_output)
+        unmasked_output_dc = self._compute_masked_hidden(causal_output, causal_labels != -1)
+        # 아래 line에서 error 발생
+        if unmasked_output_dc.size(0) == 0:
+            prediction_scores_dc = None
+        else:
+            prediction_scores_dc = self.causal_predictor_t(unmasked_output_dc)
+
+        # 3> orthogonality loss
+        orthogonality_loss = 0
+        for layer_output in two_type_outputs:
+            xa = self._compute_masked_hidden(layer_output[0][:, :input_ids.size(1), :], causal_labels != -1)
+            xh = self._compute_masked_hidden(layer_output[1][:, :input_ids.size(1), :], causal_labels != -1)
+            xa2 = torch.sqrt(torch.sum(torch.mul(xa, xa), dim=1))
+            xh2 = torch.sqrt(torch.sum(torch.mul(xh, xh), dim=1))
+            xah = torch.sum(torch.mul(xa, xh), dim=1)
+            divider = torch.mul(xa2, xh2)
+            orthogonality_loss += torch.div(xah, divider)
+        '''
+        for layer_output in two_type_outputs:
+            xa = self._compute_masked_hidden(layer_output[0][:, :input_ids.size(1), :], causal_labels != -1)
+            xh = self._compute_masked_hidden(layer_output[1][:, :input_ids.size(1), :], causal_labels != -1)
+            orthogonality_loss += torch.nn.functional.cosine_similarity(xa, xh)
+        # orthogonal_output = [torch.mul(self._compute_masked_hidden(layer_output[0][:, :input_ids.size(1), :], causal_labels != -1), self._compute_masked_hidden(layer_output[1][:, :input_ids.size(1), :], causal_labels != -1)) for layer_output in two_type_outputs]
+        '''
+        if compute_loss:
+            # masked_lm_loss = F.cross_entropy(prediction_scores, txt_labels[txt_labels != -1], reduction='none')
+            if prediction_scores_dc is not None:
+                causal_loss =  F.cross_entropy(prediction_scores_dc, causal_labels[causal_labels != -1], reduction='none')
+                masked_lm_loss = causal_loss + orthogonality_loss
+            return masked_lm_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_scores
 
     # MRFR
     def forward_mrfr(self, input_ids, position_ids, txt_type_ids,
                      img_feat, img_pos_feat,
                      attention_mask, gather_index, img_masks, img_mask_tgt,
                      feat_targets, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
-        sequence_output, _ = self.uniter(input_ids, position_ids,
+        sequence_output, _, _ = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attention_mask, gather_index,
                                       output_all_encoded_layers=False,
@@ -642,7 +732,7 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
                      img_feat, img_pos_feat,
                      attention_mask, gather_index, img_masks, img_mask_tgt,
                      feat_targets, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
-        sequence_output, _ = self.uniter(input_ids, position_ids,
+        sequence_output, _, two_type_outputs = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attention_mask, gather_index,
                                       output_all_encoded_layers=False,
@@ -671,7 +761,41 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
         else:
             return prediction_feat
 
-    
+    # MRFR
+    def forward_mrfr_vc_orthogonal(self, input_ids, position_ids, txt_type_ids,
+                     img_feat, img_pos_feat,
+                     attention_mask, gather_index, img_masks, img_mask_tgt,
+                     feat_targets, vc_feat, mrfr_vc_feat_target, txt_lens, num_bbs, img_soft_labels, compute_loss=True):
+
+        sequence_output, _, two_type_outputs = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+        # only compute masked tokens for better efficiency
+        masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+
+        # 3> orthogonality loss
+        orthogonality_loss = 0
+        for layer_output in two_type_outputs:
+            # xa = self._compute_masked_hidden(layer_output[0], img_mask_tgt)
+            # xh = self._compute_masked_hidden(layer_output[1], img_mask_tgt)
+            orthogonality_loss += torch.nn.functional.cosine_similarity(self._compute_masked_hidden(layer_output[0], img_mask_tgt), self._compute_masked_hidden(layer_output[1], img_mask_tgt))
+        
+        if vc_feat.shape[-1]==1024:
+            prediction_feat = self.feat_regress_vc(masked_output)
+            feat_targets = mrfr_vc_feat_target
+        else:
+            prediction_feat = self.feat_regress(masked_output)
+
+        if compute_loss:
+            mrfr_loss = F.mse_loss(prediction_feat, feat_targets,
+                                   reduction='none')
+            return mrfr_loss + orthogonality_loss.unsqueeze(-1).expand_as(mrfr_loss)# + orthogonality_loss#, loss_classifier, loss_causal
+        else:
+            return prediction_feat
+
 
     # MRC
     def forward_mrc(self, input_ids, position_ids, txt_type_ids,
@@ -805,7 +929,7 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
                     attention_mask, gather_index, img_masks, img_mask_tgt,
                     label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
         
-        sequence_output, _ = self.uniter(input_ids, position_ids,
+        sequence_output, _, _ = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attention_mask, gather_index,
                                       output_all_encoded_layers=False,
@@ -822,10 +946,7 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
 
         if compute_loss:
             if "kl" in task:
-                '''prediction_soft_label = F.log_softmax(
-                    prediction_soft_label, dim=-1)
-                mrc_loss = F.kl_div(
-                    prediction_soft_label, label_targets, reduction='none')'''
+
 
                 prediction_soft_label_unmasked = F.log_softmax(
                     prediction_soft_label_unmasked, dim=-1)  
@@ -850,6 +971,115 @@ class UniterAdapterForPretrainingForVCR(ModelWithHeadsAdaptersMixin, UniterForPr
             return mrc_loss #, loss_classifier, loss_causal
         else:
             return prediction_soft_label
+
+    def forward_mrc_dc_unmasked_orthogonal(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+
+        sequence_output, _, two_type_outputs = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+
+        # 1> masked object, likelihood inference
+        masked_output = self._compute_masked_hidden(sequence_output, img_mask_tgt)
+        prediction_soft_label = self.region_classifier(masked_output)       
+
+        # 2> unmasked object, causal inference
+        causal_output = self.causal_v(sequence_output)
+        unmasked_output = self._compute_masked_hidden(causal_output, img_unmask_tgt)
+        prediction_soft_label_unmasked = self.causal_predictor_v(unmasked_output)
+    
+        # 3> orthogonality loss
+        orthogonality_loss = 0
+        for layer_output in two_type_outputs:
+            xa = self._compute_masked_hidden(layer_output[0], img_unmask_tgt)
+            xh = self._compute_masked_hidden(layer_output[1], img_unmask_tgt)
+            xa2 = torch.sqrt(torch.sum(torch.mul(xa, xa), dim=1))
+            xh2 = torch.sqrt(torch.sum(torch.mul(xh, xh), dim=1))
+            xah = torch.sum(torch.mul(xa, xh), dim=1)
+            divider = torch.mul(xa2, xh2)
+            # torch.div(torch.sum(xah, dim = 1), divider)
+            orthogonality_loss += torch.div(xah, divider)# torch.nn.functional.cosine_similarity(xa, xh)
+
+        if compute_loss:
+            if "kl" in task:
+                prediction_soft_label_unmasked = F.log_softmax(
+                    prediction_soft_label_unmasked, dim=-1)  
+                mrc_loss_unmasked = F.kl_div(
+                    prediction_soft_label_unmasked, label_targets_unmasked, reduction='none')     
+
+                mrc_loss = mrc_loss_unmasked + orthogonality_loss.unsqueeze(-1).expand_as(mrc_loss_unmasked)
+            else:
+                # background class should not be the target
+                label_targets_unmasked = torch.max(label_targets_unmasked[:, 1:], dim=-1)[1] + 1
+                mrc_loss_unmasked = F.cross_entropy(
+                    prediction_soft_label_unmasked, label_targets_unmasked,
+                    ignore_index=0, reduction='none')
+
+                mrc_loss = mrc_loss_unmasked + orthogonality_loss.unsqueeze(-1).expand_as(mrc_loss_unmasked)#(mrc_loss_unmasked.size(0), mrc_loss_unmasked.size(1))
+                    
+            return mrc_loss #, loss_classifier, loss_causal
+        else:
+            return prediction_soft_label
+    def forward_orthogonal(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        sequence_output, _, two_type_outputs = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+
+        # 3> orthogonality loss
+        orthogonality_loss = 0
+        for layer_output in two_type_outputs:
+            xa = self._compute_masked_hidden(layer_output[0], img_unmask_tgt)
+            xh = self._compute_masked_hidden(layer_output[1], img_unmask_tgt)
+            xa2 = torch.sqrt(torch.sum(torch.mul(xa, xa), dim=1))
+            xh2 = torch.sqrt(torch.sum(torch.mul(xh, xh), dim=1))
+            xah = torch.sum(torch.mul(xa, xh), dim=1)
+            divider = torch.mul(xa2, xh2)
+            # torch.div(torch.sum(xah, dim = 1), divider)
+            cos = torch.div(xah, divider)
+            orthogonality_loss += torch.mul(cos, cos)# torch.nn.functional.cosine_similarity(xa, xh)
+
+
+        return orthogonality_loss
+    def forward_orthogonal_causal_confounder(self, input_ids, position_ids, txt_type_ids,
+                    img_feat, img_pos_feat,
+                    attention_mask, gather_index, img_masks, img_mask_tgt,
+                    label_targets, img_unmask_tgt, label_targets_unmasked, txt_lens, num_bbs, img_soft_labels, task, compute_loss=True):
+        sequence_output, _, two_type_outputs = self.uniter(input_ids, position_ids,
+                                      img_feat, img_pos_feat,
+                                      attention_mask, gather_index,
+                                      output_all_encoded_layers=False,
+                                      img_masks=img_masks,
+                                      txt_type_ids=txt_type_ids)
+
+        # 3> orthogonality loss
+        orthogonality_loss = 0
+        for layer_output in two_type_outputs:
+            xa = self._compute_masked_hidden(layer_output[0], img_unmask_tgt)
+            xh = self._compute_masked_hidden(layer_output[1], img_unmask_tgt)
+            xc = torch.sub(xh, xa)
+            xc2 = torch.sqrt(torch.sum(torch.mul(xc, xc), dim=1))
+            xa2 = torch.sqrt(torch.sum(torch.mul(xa, xa), dim=1))
+            # xh2 = torch.sqrt(torch.sum(torch.mul(xh, xh), dim=1))
+            xac = torch.sum(torch.mul(xa, xc), dim=1)
+            divider = torch.mul(xa2, xc2)
+            # torch.div(torch.sum(xah, dim = 1), divider)
+            cos = torch.div(xac, divider)
+            orthogonality_loss += torch.mul(cos, cos)# torch.nn.functional.cosine_similarity(xa, xh)
+
+
+        return orthogonality_loss
+
     # DC 1 (Do-Calculus 1)
     def forward_dc_1(self, input_ids, position_ids, txt_type_ids,
                     img_feat, img_pos_feat,

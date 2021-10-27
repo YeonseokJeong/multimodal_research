@@ -101,7 +101,7 @@ class BertSelfOutput(BertSelfOutputAdaptersMixin, nn.Module):
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.adapters_forward(hidden_states, input_tensor)# self.LayerNorm(hidden_states + input_tensor)
+        hidden_states, _ = self.adapters_forward(hidden_states, input_tensor)# self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
 
@@ -145,8 +145,9 @@ class BertOutput(BertOutputAdaptersMixin, nn.Module):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)#;import ipdb;ipdb.set_trace(context=10)
         # hidden_states = self.LayerNorm(hidden_states + input_tensor) # apply adapter
-        hidden_states = self.adapters_forward(hidden_states, input_tensor) # apply adapter
-        return hidden_states
+
+        hidden_states, another_hidden_states = self.adapters_forward(hidden_states, input_tensor) # apply adapter
+        return hidden_states, another_hidden_states
 
 
 class BertLayer(BertLayerAdaptersMixin, nn.Module):
@@ -159,8 +160,8 @@ class BertLayer(BertLayerAdaptersMixin, nn.Module):
     def forward(self, hidden_states, attention_mask):
         attention_output = self.attention(hidden_states, attention_mask)
         intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        return layer_output
+        layer_output, other_hidden_states = self.output(intermediate_output, attention_output)
+        return layer_output, other_hidden_states
 
 class UniterEncoder(BertEncoderAdaptersMixin, nn.Module):
     def __init__(self, config):
@@ -175,14 +176,16 @@ class UniterEncoder(BertEncoderAdaptersMixin, nn.Module):
     def forward(self, input_, attention_mask,
                 output_all_encoded_layers=True):
         all_encoder_layers = []
+        two_type_outputs = [] ### for orthogonality loss
         hidden_states = input_
         for layer_module in self.layer:
-            hidden_states = layer_module(hidden_states, attention_mask)
-            if output_all_encoded_layers:
+            hidden_states, transformer_hidden_states= layer_module(hidden_states, attention_mask)
+            two_type_outputs.append([hidden_states, transformer_hidden_states])
+            if output_all_encoded_layers: # False
                 all_encoder_layers.append(hidden_states)
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
-        return all_encoder_layers
+        return all_encoder_layers, two_type_outputs
 
 class UniterModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
     """Adds adapters to the BertModel module."""
@@ -193,7 +196,7 @@ class UniterModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
     def train_adapter(self, adapter_setup: Union[list, AdapterCompositionBlock]):
         """Sets the model into mode for training the given adapters."""
         self.train()
-        self.freeze_model(False) # True/False
+        self.freeze_model(True) # True/False
         adapter_setup = parse_composition(adapter_setup)
         self.encoder.enable_adapters(adapter_setup, True, False)
         self.enable_invertible_adapters(adapter_setup.flatten())
@@ -295,7 +298,7 @@ class UniterConfig(ModelConfigAdaptersMixin, PretrainedConfig):
             initializer_range: The sttdev of the truncated_normal_initializer
                 for initializing all weight matrices.
         """
-
+        self.label2id = None
         if isinstance(vocab_size_or_config_json_file, str):
             with open(vocab_size_or_config_json_file,
                       "r", encoding='utf-8') as reader:
@@ -517,10 +520,10 @@ class UniterModel(UniterModelAdaptersMixin, UniterPreTrainedModel):
                 input_ids, position_ids,
                 img_feat, img_pos_feat,
                 gather_index, img_masks, txt_type_ids, img_type_ids)
-        import ipdb;ipdb.set_trace(context=10)
-        encoded_layers = self.encoder(
+
+        encoded_layers, two_type_outputs = self.encoder(
             embedding_output, extended_attention_mask,
             output_all_encoded_layers=output_all_encoded_layers)
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
-        return encoded_layers, None
+        return encoded_layers, None, two_type_outputs

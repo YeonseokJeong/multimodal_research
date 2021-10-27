@@ -158,6 +158,7 @@ class AdapterLayerBaseMixin(ABC):
         """
         Forwards the given input through the given stack of adapters.
         """
+        transformer_hidden_states = None
         for i, adapter_stack_layer in enumerate(adapter_setup):
             # Break if setup is too deep
             if isinstance(adapter_stack_layer, AdapterCompositionBlock) and lvl >= 1:
@@ -185,16 +186,17 @@ class AdapterLayerBaseMixin(ABC):
                 adapter_layer = self.adapters[adapter_stack_layer]
                 adapter_config = self.config.adapters.get(adapter_stack_layer)
                 hidden_states, _, residual = self.get_adapter_preparams(adapter_config, hidden_states, input_tensor)
+                transformer_hidden_states = hidden_states
                 hidden_states, _, up = adapter_layer(hidden_states, residual_input=residual)
                 # as this stack might be part of a fusion block, return the adapter up-projection output here
                 # together with the final output (with potential residuals & norms) if we reached the last block of the stack
                 if i == len(adapter_setup) - 1:
-                    return hidden_states, up, input_tensor
+                    return hidden_states, up, input_tensor, transformer_hidden_states
             # Case X: No adapter which is part of this module -> ignore
 
         # If we got here, we either had another nested composition block
         # or no adapter was found. In both cases, we don't need to set the second return value for fusion
-        return hidden_states, None, input_tensor
+        return hidden_states, None, input_tensor, transformer_hidden_states
 
     def adapter_fusion(self, adapter_setup: Fuse, hidden_states, input_tensor, lvl=0):
         """
@@ -434,6 +436,7 @@ class AdapterLayerBaseMixin(ABC):
         """
         Called for each forward pass through adapters.
         """
+        transformer_hidden_states = None
         if hasattr(self.config, "adapters"):
             # First check for given arguments before falling back to defined setup
             adapter_setup = kwargs.pop("adapter_names", None)
@@ -448,7 +451,7 @@ class AdapterLayerBaseMixin(ABC):
         )
         if not skip_adapters and (len(set(self.adapters.keys()) & adapter_setup.flatten()) > 0):
             if isinstance(adapter_setup, Stack):
-                hidden_states, _, input_tensor = self.adapter_stack(adapter_setup, hidden_states, input_tensor)
+                hidden_states, _, input_tensor, transformer_hidden_states = self.adapter_stack(adapter_setup, hidden_states, input_tensor)
             elif isinstance(adapter_setup, Fuse):
                 hidden_states = self.adapter_fusion(adapter_setup, hidden_states, input_tensor)
             elif isinstance(adapter_setup, Split):
@@ -474,4 +477,4 @@ class AdapterLayerBaseMixin(ABC):
         else:
             hidden_states = hidden_states + input_tensor
 
-        return hidden_states
+        return hidden_states, transformer_hidden_states

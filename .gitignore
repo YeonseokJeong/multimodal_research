@@ -44,7 +44,7 @@ downstream/UNITER/output_pretrain5_2600_success
 downstream/UNITER/output_success_45000
 downstream/UNITER/output_pretrain_do_calculus/
 downstream/UNITER/output_pretrain_do_calculus_nohup/
-downstream/UNITER/output_pretrain_do_calculus_ver2_nohup/
+downstream/UNITER/output_pretrain_do_calculus_ver2/
 downstream/UNITER/output_pretrain_do_calculus_ver2_10times/
 downstream/UNITER/output_pretrain_do_calculus_ver2_10times_stoppded/
 downstream/UNITER/output_pretrain_do_calculus_ver3_stopped/
@@ -83,6 +83,14 @@ downstream/UNITER/output_pretrain_3_1_2_adapter_mrc_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_pretrain_3_1_1_1_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_pretrain_3_1_2_1_adapterfreeze_mrc_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_pretrain_3_1_3_1_adapterfreeze_mrcmlmmrfr_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_2_1_1_adapterfreeze_mrcmlm_ortho_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_2_1_2_adapterfreeze_mrcmlm_acortho_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_2_3_2_adapterfreeze_mrcmlmmrfr_acortho_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_3_1_1_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_3_1_2_adapterfreeze_mrcmlm_acortho_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_3_1_3_fusion_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_pretrain_3_4_1_mrcmlm_unmaskeddocal_2ndmodel/
+
 
 
 ### UNITER finetune output
@@ -139,6 +147,10 @@ downstream/UNITER/output_pretrain_3_1_2_1_adapterfreeze_mrc_test/
 downstream/UNITER/output_train_3_1_1_1_fail2adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_train_3_1_1_1_failadapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
 downstream/UNITER/output_train_3_1_2_1fail_adapterfreeze_mrc_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_1_3_1_adapterfreeze_mrcmlmmrfr_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_2_1_1_adapterfreeze_mrcmlm_ortho_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_2_1_2_adapterfreeze_mrcmlm_acortho_unmaskeddocal_2ndmodel/
+downstream/UNITER/output_train_3_3_1_3_fusion_adapterfreeze_mrcmlm_unmaskeddocal_2ndmodel/
 
 
 ### UNITER bouding box
@@ -187,6 +199,7 @@ downstream/UNITER/pretain_3_0.txt
 downstream/UNITER/pretrain_3_0_1.txt
 downstream/UNITER/pretrain_0_0_3_unmasked_1st.txt
 downstream/UNITER/train_3_1_1_1.txt
+downstream/UNITER/torch-1.1.0a0+828a6a3-cp36-cp36m-linux_aarch64.whl
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks

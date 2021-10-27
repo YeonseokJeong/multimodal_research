@@ -180,9 +180,10 @@ def main(opts):
     model.init_type_embedding()
     model.init_word_embedding(NUM_SPECIAL_TOKENS)
     ### for adapter
-    adapter_config = AdapterConfig.load('pfeiffer', non_linearity=None, reduction_factor=None)
-    model.add_adapter("squad", config = adapter_config)
-    model.train_adapter(["squad"])
+    import ipdb;ipdb.set_trace(context=10)
+    #adapter_config = AdapterConfig.load('pfeiffer', non_linearity=None, reduction_factor=None)
+    #model.add_adapter("squad", config = adapter_config)
+    #model.train_adapter(["squad"])
     # print(model.uniter.encoder.layer[11].output.adapters.squad.adapter_up.weight[0][:10])
     ###
     if opts.checkpoint_from == "vcr_pretrain":
@@ -203,7 +204,7 @@ def main(opts):
         print("Missing_keys:", list(missing_keys))
         model.load_state_dict(matched_state_dict, strict=False)
     del checkpoint
-    
+    import ipdb;ipdb.set_trace(context=10)
 
     model.to(device)
     # make sure every process has same model parameters in the beginning
